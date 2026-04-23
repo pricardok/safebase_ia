@@ -1,0 +1,1072 @@
+[file name]: Arquitetura_resumo.txt
+[file content begin]
+
+# API DO SISTEMA VENDA COM CONEXÃO (ESSA API É UTILIZANDA PELO ADMIN E PELO SISTEMA DE USO DO CLIENTE)
+# - SISTEMA CLIENTE ( SC ) - É O NOSSO CLIENTE E UTILIZA A APLICAÇÃO (https://vendacomconexao.com)
+# - SISTEMA ADMIN ( SA ) - É O SISTEMA DE BACKOFFICE PARA GESTÃO DO SISTEMAS E API E UTILIZA A APLICAÇÃO (https://portalvenda.vendacomconexao.com)
+
+Nomeclaruta:
+SC - Sistema Cliente - [SC]
+SA - Sistema Admin - [SA]
+GW - Gateway/Webhook - [GW]
+INT - Interno/Ambos - [INT] 
+
+VendaComConexao/
+Arquitetura_resumo.txt                       # Documentação oficial da arquitetura do sistema.
+├── healthcheck.sh                           # Script de verificação de saúde do sistema.
+│
+└── backend/                                 # [INT] API FastAPI e lógica de negócio.
+    ├── app/
+    │   ├── __init__.py                      # [INT] Define o diretório 'app' como um pacote Python.
+    │   │
+    │   ├── main.py                          # [INT] Ponto de Entrada da Aplicação FastAPI.
+    │   │   ├── **Criação da Instância Principal**: Inicializa o objeto `FastAPI` com metadados da API.
+    │   │   ├── **Registro de Middlewares**: Configura e registra middlewares essenciais, como CORS e o `APILoggingMiddleware` de `middleware.py`.
+    │   │   ├── **Inclusão de Roteadores**: Importa e inclui todos os roteadores da pasta `app/routes`, tornando os endpoints disponíveis.
+    │   │   ├── **Eventos de Ciclo de Vida**:
+    │   │   │   ├── `@on_event("startup")`: Inicializa serviços críticos como o `logging_service` e, se `CRIAR_AMBIENTE=true`, executa a inicialização do banco de dados (`init_db`).
+    │   │   │   └── `@on_event("shutdown")`: Garante o encerramento limpo de serviços, como o listener de logs.
+    │   │   └── **Endpoints Globais**: Define as rotas raiz (`/`) e de verificação de saúde (`/health`).
+    │   │
+    │   ├── routes/                          # Módulo centralizado para todos os endpoints (rotas) da API. OBS: AS ROTAS SÃO USITILIZADAS PELOS SISTEMAS SC e SA.
+    │   │   ├── __init__.py                  # [INT] Arquivo que marca o diretório como um pacote Python.
+    │   │   ├── auth_routes.py               # [SC/SA] Endpoints de autenticação, cadastro e gestão de perfil. Rotas: /auth/login, /auth/signup, /auth/me, /auth/profile, /auth/force-password-change.
+    │   │   ├── simulador_routes.py          # [SC] Endpoints do Simulador de conversas com clientes IA. Rotas: /simulador/responder, /simulador/feedback.
+    │   │   ├── objecoes_routes.py           # [SC] Endpoint para o módulo de Quebra de Objeções. Rota: /objecoes/quebrar.
+    │   │   ├── detector_routes.py           # [SC] Endpoint para o Detector de "vendedor chato". Rota: /detector/analisar. 
+    │   │   ├── conexao_routes.py            # [SC] Endpoints para o módulo de Conexão. Rotas: /conexao/gerar-perguntas, /conexao/analisar-resposta, /conexao/simular-dialogo.
+    │   │   ├── scripts_routes.py            # [SC] Endpoints para otimização e análise de Scripts de Vendas. Rotas: /scripts/otimizar, /scripts/analisar-eficacia, /scripts/gerar-variacoes.
+    │   │   ├── analise_routes.py            # [SC] Endpoints do Co-piloto Cognitivo para análises preditivas. Rotas: /analise/conversa, /analise/contexto-alinhamento, /analise/predicao-objecoes, /analise/mudanca-emocional.
+    │   │   ├── integrations_routes.py       # [GW] Uso do Gateway (Kiwify) - Endpoint unificado para webhooks de integrações. Rota: /integracoes/pagamentos. 
+    │   │   ├── hooks_routes.py              # [GW] Uso do Gateway (Kiwify) - Endpoint para webhooks de pagamento (Kiwify). Rota: /hooks/gateway-events.
+    │   │   ├── email_routes.py              # [SA] Endpoints para serviços de e-mail (status, teste). Rotas: /email/status, /email/test.    
+    │   │   ├── admin_routes.py              # [SA] Endpoints administrativos principais para gestão do sistema (clientes, usuários, IA, logs, etc.).
+    │   │   ├── admin_routes_portal.py       # [SA] Novas rotas para o portal de administração, focadas em relatórios e visões detalhadas (ex: /admin/perfis/detalhados). Importa diretamente de `admin_core.py`.
+    │   │   ├── historico_routes.py          # [SC] Endpoints para consulta de histórico, sessões e perfis. Rotas: /historico/simulacoes, /historico/sessoes, /historico/perfil-comportamental.
+    │   │   ├── planos_routes.py             # [SC] Endpoints para gestão de planos e assinaturas. Rotas: /planos, /me/plano.
+    │   │   ├── waha_routes.py               # [SC] Endpoints para gestão Waha    
+    │   │   ├── config_routes.py             # [SA] Endpoints para gestão de configurações do sistema.
+    │   │   └── prompts_routes.py            # [SC/SA] Endpoints para gestão de prompts e A/B Testing. Rotas: /prompts, /admin/prompt-versoes.
+    │   │
+    │   ├── database/                        # [INT] Camada de Acesso ao Banco de Dados (PostgreSQL). Totalmente segmentada por contexto.
+    │   │   ├── __init__.py                  # [INT] Consolida e re-exporta funções de banco de dados para uso geral na aplicação.
+    │   │   │   ├── Expõe funções de: `users`, `rbac`, `history`, `planos`, `webhooks_db`, `prompts`, etc.
+    │   │   │   └── Cria um namespace único para acesso ao DB, ex: `from app.database import get_user_by_id, log_webhook_event`.
+    │   │   ├── core.py                      # [INT] Lógica central de conexão e pool de conexões com o banco.
+    │   │   ├── database_inicializacao.py    # [INT] Funções para criar e popular tabelas (init_db, init_ia_tables, etc.) NÃO USAMOS ELE, ELE SO É USADO CASO UM AMBIENTE PRECISE SER CRIADO DO ZERO, COMO NOSSO AMBINETE JA ESTA EM PRODUÇÃO ESSE .PY SO SERVE PARA DOCUMENTAÇAO DO BANCO
+    │   │   ├── webhooks_db.py               # [GW] Funções de banco para webhooks: log_webhook_event, get_webhook_logs, get_webhook_event_by_id. 
+    │   │   ├── admin_core.py                # [SA] Funções de banco para rotas do `admin_routes_portal.py`. **NÃO passa pelo `__init__.py`** e é importado diretamente nas rotas para isolamento.
+    │   │   │   └── Funções get_all_clientes_admin, get_perfis_detalhados_admin, get_usuarios_com_perfis_admin, etc. 
+    │   │   ├── integrations_db.py           # [GW] Funções de banco para o log de integrações.
+    │   │   ├── rbac.py                      # [INT] Funções de controle de acesso (get_user_profile, get_profile_permissions, etc.).
+    │   │   ├── config_db.py                 # [SA/INT] Funções para ler e escrever na tabela `configuracoes_sistema`.
+    │   │   ├── history.py                   # [SC] Funções de histórico e simulações (save_simulation, get_user_simulations, etc.).
+    │   │   ├── users.py                     # [SC/SA] Funções CRUD para usuários (get_user_by_username, create_user, etc.).
+    │   │   ├── planos.py                    # [SC/SA] Funções de planos e clientes (get_plano_do_cliente, create_cliente, etc.).
+    │   │   ├── logs_db.py                   # [INT] Funções de banco para logs da API (get_api_logs, log_api_request).
+    │   │   └── prompts.py                   # [SC] Funções de A/B testing de prompts (get_prompt_versoes, create_prompt_versao, etc.).
+    │   │
+    │   ├── auth_jwt.py                      # [INT] Sistema de autenticação JWT.
+    │   │   ├── Tokens JWT com expiração configurável (padrão 7 dias).
+    │   │   ├── Hash de senhas com fallback (bcrypt → SHA256)
+    │   │   ├── Funções verify_password e create_access_token
+    │   │   └── Modelos Token, User, UserInDB
+    │   │   	
+    │   ├── auth_email.py                    # [SA] Lógica de autenticação específica para rotas de e-mail.
+    │   │   ├── Validação de API Key para rotas de e-mail (`API_KEY_MAIL_SEGURO`).
+    │   │   └── Validação de API Key para webhooks (`API_KEY_WEBHOOK_GATEWAY`).
+    │   │    
+    │   ├── auth_integrations.py             # [GW] Lógica de autenticação para webhooks de integrações.
+    │   │   └── Validação de assinatura HMAC (ex: Kiwify) para garantir a autenticidade dos webhooks.
+    │   │
+    │   ├── config.py                        # [INT] Central de Configurações e Variáveis de Ambiente.
+    │   │   ├── **Carregamento Seguro**: Utiliza `python-dotenv` para carregar variáveis do arquivo `.env` de forma robusta.
+    │   │   ├── **Tipagem e Validação**: Converte as variáveis de ambiente para os tipos corretos (bool, int, str) e define valores padrão seguros, garantindo a integridade das configurações.
+    │   │   └── **Constantes Globais**: Expõe constantes como `CRIAR_AMBIENTE`, `USE_MOCK_FORCADO`, `API_LOGGING_ENABLED`, `JWT_SECRET_KEY`, `KIWIFY_WEBHOOK_SECRET` para serem usadas em toda a aplicação.
+    │   │
+    │   ├── middleware.py                    # [INT] Middleware de autenticação e segurança global.
+    │   │   ├── **Função Principal**: Intercepta todas as requisições antes que cheguem aos endpoints, aplicando lógica de segurança, autenticação, autorização e logging.
+    │   │   ├── **Autenticação Híbrida e Prioritária**:
+    │   │   │   ├── Tenta autenticar via JWT (Bearer Token) primeiro.
+    │   │   │   ├── Se falhar, tenta via API Key (`X-API-Key` header).
+    │   │   │   └── Define `request.state.user` (para JWT) ou `request.state.current_profile` (para API Key).
+    │   │   ├── **Validação de `session_salt` (Segurança JWT)**:
+    │   │   │   ├── Compara o `session_salt` presente no payload do JWT com o `session_salt` atual do usuário no banco de dados.
+    │   │   │   └── Garante que tokens antigos (de sessões anteriores ou roubados) sejam invalidados imediatamente após um novo login ou reset de senha.
+    │   │   ├── **Autorização RBAC (Role-Based Access Control)**:
+    │   │   │   ├── Integra-se com `rbac_service.py` para carregar as permissões do usuário/API Key autenticado no `request.state.permissions`.
+    │   │   │   └── Essas permissões são usadas pelas dependências (`check_module_permission`) para controlar o acesso aos módulos e endpoints.
+    │   │   ├── **Rate Limiting Diferenciado**: Aplica limites de requisições por período, com regras específicas para:
+    │   │   │   ├── Usuários autenticados via JWT.
+    │   │   │   ├── API Keys (com limites mais altos para integrações).
+    │   │   │   ├── Super Acesso (API Key master, com limites ainda maiores).
+    │   │   │   └── Requisições não autenticadas (baseado no IP).
+    │   │   ├── **Logging de API Abrangente (`APILoggingMiddleware`)**:
+    │   │   │   ├── Registra **todas** as requisições (sucesso e falha) na tabela `api_logs` de forma assíncrona via `logging_service`.
+    │   │   │   ├── **Enriquecimento de Logs**: Adiciona automaticamente `username`, `cliente_id`, `razao_social`, `auth_type` e `plano` aos logs para facilitar a auditoria.
+    │   │   │   ├── **Detalhes de Erro (JSONB)**: Em caso de falha (4xx, 5xx), captura `request_body`, `error_type`, `error_detail` e `traceback` (para 5xx) na coluna `details` (JSONB).
+    │   │   ├── **Padronização de Respostas de Erro**: Garante que todas as exceções HTTP retornem um JSON consistente com `{"detail": "mensagem"}`.
+    │   │   ├── **Delegação de Autenticação**: Permite que rotas específicas (como webhooks em `hooks_routes.py` ou `integrations_routes.py`, e `force-password-change`) tenham sua própria lógica de autenticação, ignorando o middleware global quando necessário.
+    │   │   └── **Proteção de Documentação**: Restringe o acesso às interfaces Swagger (`/docs`) e Redoc (`/redoc`) a usuários com uma API Key master, aumentando a segurança em produção.
+    │   │   	
+    │   ├── dependencies.py                  # [INT] Dependências reutilizáveis para injeção no FastAPI.
+    │   │   ├── `check_module_permission`: Valida se o usuário tem permissão para acessar um módulo.
+    │   │   ├── `get_current_user_dependency`: Dependência segura para obter o usuário autenticado.
+    │   │   └── `chamar_ia_otimizado (async)`: Ponto de entrada assíncrono para o orquestrador de IA, com lógica de failover e cache.
+    │   │
+    │   ├── models.py                        # [INT] Modelos Pydantic (schemas).
+    │   │   ├── Schemas para todos os módulos: Simulador, Objeções, Detector, Conexão, Scripts.
+    │   │   ├── Schemas para análise preditiva: AnaliseConversa, ProbabilidadeConversao
+    │   │   ├── Schemas para Co-piloto: ContextoAlinhamento, PredicaoObjecoes, MudancaEmocional
+    │   │   ├── Schemas para histórico: SimulacaoCreate, OnboardingResponse
+    │   │   ├── Schemas para autenticação: UserLogin, UserRegister, TokenResponse, UserLoginResponse
+    │   │   ├── Schemas para A/B Testing: PromptVersaoCreate, PromptVersaoResponse, PromptVersaoUpdate
+    │   │   ├── Schemas para Planos e Clientes: SignupRequest, PlanoEfetivoResponse
+    │   │   └── Schemas para Memória: UserBehavioralProfileResponse, UserHistorySummaryResponse
+    │   │
+    │   ├── models_admin.py                  # [SA] Schemas Pydantic para as novas rotas do portal de administração (ex: Gestão de Descontos).
+    │   │
+    │   ├── models_hooks.py                  # [GW] Schemas de Validação para Webhooks (Kiwify).
+    │   │   ├── Validação de Schema: Define a estrutura de dados esperada dos webhooks da Kiwify usando Pydantic.
+    │   │   ├── Estrutura Aninhada: Modela o payload complexo da Kiwify com sub-modelos (Customer, Product, Subscription).
+    │   │   ├── Compatibilidade Dual-Language: Suporta campos em inglês (ex: `Customer`) e português (ex: `Cliente`) que a Kiwify pode enviar, garantindo robustez.
+    │   │   ├── Acesso Seguro a Dados: Fornece métodos auxiliares (`get_customer_email`, `get_customer_name`) que abstraem a complexidade do payload e evitam erros se um campo estiver ausente.
+    │   │   └── Garantia de Integridade: Assegura que apenas dados válidos e bem-formados sejam processados pelo `webhook_service`.
+    │   │   	
+    │   ├── services/                        # [INT] Serviços de Negócio 
+    │   │   ├── __init__.py                  # [INT] Exporta instâncias singleton de todos os serviços para importação unificada.
+    │   │   │   ├── Expõe: `rbac_service`, `signup_service`, `webhook_service`, `history_service`, `ia_orchestrator`, `prompt_service`, etc.
+    │   │   │   └── Permite importações como: `from app.services import history_service`.
+    │   │   │	
+    │   │   ├── logging_service.py           # [INT] Serviço de Logging Assíncrono para o Banco de Dados.
+    │   │   │   ├── Configura um `QueueListener` que opera em uma thread separada para não bloquear as requisições da API.
+    │   │   │   ├── Usa um `DatabaseLogHandler` para formatar e inserir os registros de log na tabela `api_logs`.
+    │   │   │   └── Gerencia a conexão com o banco de dados de forma segura e robusta dentro da thread de background.
+    │   │   │
+    │   │   ├── waha_service.py              # [SC] Serviço waha.
+    │   │   │   └── Gerencia waha.
+    │   │   │
+    │   │   ├── rbac_service.py              # [INT] Controle de Acesso RBAC
+    │   │   │   ├── Cache LRU de permissões para usuários e API Keys.
+    │   │   │   ├── Validação centralizada de acesso a módulos (`check_module_access`).
+    │   │   │   ├── Mapeamento de endpoints para módulos (`_extract_module_from_path`).
+    │   │   │   ├── Auditoria de super acesso (`_log_super_access`).
+    │   │   │   ├── Obtenção de permissões para usuários JWT e API Keys.
+    │   │   │   ├── Logs detalhados de acesso negado.
+    │   │   │   └── Acesso seguro ao payload do token (`_get_user_info_for_logging`) para evitar AttributeError.
+    │   │   │
+    │   │   ├── signup_service.py            # [SC/GW] Serviço de orquestração para cadastro de novos clientes.
+    │   │   │   ├── Orquestra a criação do Cliente (tenant) e do primeiro Usuário (admin).
+    │   │   │   ├── Valida se o usuário ou e-mail já existem e chama os serviços de banco de dados para criar os registros.
+    │   │   │   └── Atribui plano padrão, perfil 'vendedor' e dispara e-mail de boas-vindas (`send_welcome_email`).
+    │   │   │    
+    │   │   ├── playbook_service.py          # [SC] Serviço de Recomendação de Playbooks Estratégicos.
+    │   │   │   ├── Motor de Recomendação Proativo**: Transforma o sistema de reativo para proativo, sugerindo ações ao vendedor.
+    │   │   │   ├── Gatilho Contextual: É acionado pela análise do Co-piloto quando um cenário crítico é detectado (ex: alta probabilidade de objeção, queda na emoção do cliente).
+    │   │   │   ├── Combinação de Módulos: Cria uma sequência de ações estratégicas, combinando diferentes ferramentas do sistema (ex: "Use a abordagem de 'Prova Social' do Módulo de Objeções e depois o 'Script de Fechamento'").
+    │   │   │   ├── Inteligência Conectada: Utiliza o contexto da sessão (`session_id`) para fornecer recomendações altamente relevantes para o momento da conversa.
+    │   │   │   └── Integração Opcional: As recomendações são adicionadas à resposta do Co-piloto, garantindo que a funcionalidade seja um "plus" e não quebre fluxos existentes.
+    │   │   │
+    │   │   ├── webhook_service.py           # [GW] Orquestração e Lógica de Negócio para Webhooks da Kiwify.
+    │   │   │   ├── Orquestração Central: `process_kiwify_event` atua como ponto central, recebendo o payload validado.
+    │   │   │   ├── Auditoria Completa: Loga cada evento recebido no banco (`log_webhook_event`) e atualiza o status (processed/failed) ao final, garantindo rastreabilidade total.
+    │   │   │   ├── Roteamento de Eventos: Identifica o tipo de evento (`order_approved`, `subscription_canceled`, etc.) e o direciona para o handler de negócio apropriado.
+    │   │   │   ├── Gestão do Ciclo de Vida do Cliente:
+    │   │   │   │   - Criação: Delega a criação de novos clientes e usuários para o `signup_service`, mantendo a consistência.
+    │   │   │   │   - Cancelamento vs. Reembolso: Diferencia a lógica de negócio entre um cancelamento (acesso mantido até o fim do período) e um reembolso/chargeback (acesso revogado imediatamente).
+    │   │   │   │   - Manutenção: Gerencia status de assinatura como "em atraso" (`atrasado`) e "renovada" (`ativo`), ativando e desativando usuários conforme necessário.
+    │   │   │   ├── Validação de Schema: Usa o `KiwifyWebhookPayload` para garantir a integridade dos dados recebidos.
+    │   │   │   ├── Re-processamento: Permite o re-processamento de eventos falhos via endpoint administrativo (`/admin/webhooks/logs/{id}/reprocess`).
+    │   │   │   └── Resiliência: Projetado para ser robusto, tratando exceções e garantindo que a rota de webhook sempre retorne uma resposta adequada ao gateway.
+    │   │   │
+    │   │   ├── integration_service.py       # [GW] Serviço Genérico para Webhooks de Integrações.
+    │   │   │   ├── Ponto de Entrada Unificado: Projetado para ser o handler da rota `/integracoes/pagamentos`, recebendo webhooks de múltiplos gateways.
+    │   │   │   ├── Lógica de Roteamento: Identifica o gateway de origem (ex: pela URL ou por um campo no payload) e direciona para um processador específico (ex: `_processar_kiwify`, `_processar_hotmart`).
+    │   │   │   ├── Abstração de Lógica: Separa a lógica de autenticação da rota da lógica de processamento do negócio.
+    │   │   │   ├── Auditoria: Loga todas as requisições de integração na tabela `integrations_log` para depuração e rastreabilidade.
+    │   │   │   └── Escalabilidade: Facilita a adição de novos gateways de pagamento no futuro sem a necessidade de criar novas rotas.
+    │   │   │	
+    │   │   ├── history_service.py           # [SC] Persistência Segura de Histórico + Memória de Longo Prazo
+    │   │   │   ├── Salva simulações apenas para usuários autenticados via JWT (`save_simulation_secure`).
+    │   │   │   ├── Sanitização de dados sensíveis (`_sanitize_*`).
+    │   │   │   ├── Validação de propriedade de dados (`validate_simulation_ownership`).
+    │   │   │   ├── Geração de Memória de Longo Prazo (`get_user_summary`).
+    │   │   │   ├── Análise de Perfis Comportamentais (`get_user_behavioral_profile`).
+    │   │   │   ├── Cache LRU com TTL (maxsize=128, TTL=5min): _get_cached_user_summary()
+    │   │   │   ├── Métodos auxiliares para cálculo de métricas e análise de tendências.
+    │   │   │   └── Fallback robusto para erros de salvamento e análise.
+    │   │   │	
+    │   │   ├── database_context.py          # [INT] Contexto de Banco para Isolamento
+    │   │   │   ├── Obtém usuário atual de forma validada: get_current_user_id()
+    │   │   │   ├── Validação de propriedade: validate_data_ownership()
+    │   │   │   ├── Controle de persistência: should_save_history()
+    │   │   │   └── Isolamento garantido entre usuários
+    │   │   │	
+    │   │   ├── audit_service.py             # [INT] Auditoria de Operações Sensíveis
+    │   │   │   ├── Logs estruturados: AuditAction (SUPER_ACCESS, MODULE_ACCESS, DATA_ACCESS)
+    │   │   │   ├── Rastreamento de super acesso com timestamps
+    │   │   │   ├── Métodos específicos: log_super_access(), log_module_access()
+    │   │   │   ├── Armazenamento em memória (últimos 10k logs)
+    │   │   │   └── Consulta para análise: get_audit_logs() (exposto via /admin/audit/logs).
+    │   │   │	
+    │   │   ├── security.py                  # [INT] Utilitários de Segurança
+    │   │   │   ├── Geração de API Keys: generate_api_key()
+    │   │   │   ├── Validação de formato: validate_api_key_format()
+    │   │   │   ├── Mascaramento para logs: mask_api_key()
+    │   │   │   └── Hash com fallback: get_password_hash(), verify_password()
+    │   │   │	
+    │   │   ├── crypto_manager.py            # [INT] Gerenciador de Criptografia para Chaves IA
+    │   │   │   ├── Criptografia Fernet com PBKDF2HMAC
+    │   │   │   ├── Encrypt/decrypt seguro de chaves reais
+    │   │   │   ├── Master key derivada de CRYPTO_MASTER_KEY
+    │   │   │   └── Fallback para desenvolvimento
+    │   │   │	
+    │   │   ├── prompt_service.py            # [SC] Serviço de Prompts com Contexto Personalizado
+    │   │   │   ├── Renderização de prompts com injeção de contexto do usuário (`render_with_user_context`).
+    │   │   │   ├── Obtenção de contexto (histórico e perfil) via `history_service` (`_get_user_context`).
+    │   │   │   ├── Integração com History Service para obter resumo e perfil comportamental.
+    │   │   │   ├── Placeholders: {{historico_usuario}}, {{perfil_comportamental}}, {{instrucao_ajuste}}
+    │   │   │   ├── Extração segura do `user_id` do request para passar aos serviços, evitando erros de tipo.
+    │   │   │   ├── Integração com `prompt_manager` para renderização base.
+    │   │   │   └── Integração com IAOrchestrator para chamadas IA
+    │   │   │
+    │   │   ├── ia_orchestrator.py           # [SC/SA] Orquestração IA Dinâmica
+    │   │   │   ├── Balanceamento de carga entre chaves ativas
+    │   │   │   ├── Failover automático entre provedores
+    │   │   │   ├── **Cache Duplo para Performance Máxima**: Utiliza um cache de 15-30s para chaves de provedores individuais e um cache global de 5s para a lista de chaves ordenadas, reduzindo drasticamente a carga no banco de dados durante picos de tráfego.
+    │   │   │   ├── **Totalmente Assíncrono**: Realiza chamadas de rede (ex: para a API do Mistral) de forma não-bloqueante usando `httpx`, garantindo alta performance.
+    │   │   │   ├── Modo Mock automático se todos provedores falharem
+    │   │   │   ├── Métricas de performance em tempo real
+    │   │   │   ├── Métodos: get_active_providers(), rotate_key(), mark_key_failure/success()
+    │   │   │   ├── Status do sistema: get_system_status() e get_globally_sorted_keys() para o frontend.
+    │   │   │   ├── Configuração dinâmica via banco: should_use_mock()
+    │   │   │   ├── Métodos avançados: get_provider_key_for_use(), get_real_key_for_use()
+    │   │   │   └── Integração com CryptoManager para chaves reais
+    │   │   │	
+    │   │   ├── key_manager.py               # [INT] Gerenciador de Chaves IA
+    │   │   │   ├── Hash seguro: hash_key() com SHA256
+    │   │   │   ├── Mascaramento de chaves para exibição segura (`mask_key`).
+    │   │   │   ├── Validação de formato: validate_key_format() por provedor
+    │   │   │   └── Geração de descrição: generate_key_description()
+    │   │   │	
+    │   │   ├── utils_service.py             # [SC] Serviço de Utilitários e Sistema Mock
+    │   │   │   ├── Funções de Parsing: `parsear_analise_textual`, `parsear_respostas_ia`, etc. para extrair dados estruturados de respostas de IA.
+    │   │   │   ├── Funções de Análise: `analisar_probabilidade_conversao` para métricas preditivas.
+    │   │   │   ├── Funções de Co-piloto: `executar_copiloto_cognitivo` que orquestra os módulos de análise.
+    │   │   │   ├── Funções de Sessão: `get_or_create_session_id` para o histórico unificado.
+    │   │   │   └── Sistema Mock:
+    │   │   │   	  ├── gerar_resposta_mock_simulador() - Respostas contextuais por perfil
+    │   │   │   	  ├── gerar_feedback_mock() - Feedback contextualizado realista
+    │   │   │   	  ├── quebrar_objecao_mock() - 5 abordagens para objeções
+    │   │   │   	  ├── detector_analisar_mock() - Mock inteligente do detector
+    │   │   │   	  ├── gerar_mock_contexto() - Mock para ContextGuardian
+    │   │   │   	  ├── gerar_mock_predicao_objecoes() - Mock para ObjectionPredictor
+    │   │   │   	  └── gerar_mock_mudanca_emocional() - Mock para EmotionShift
+    │   │   │
+    │   │   ├── planos_service.py            # [SC] Serviço para lógica de negócios de planos e assinaturas.
+    │   │   │   ├── Listagem de planos públicos.
+    │   │   │   ├── Lógica para upgrade de plano.
+    │   │   │   └── Cálculo de estatísticas de uso do cliente.
+    │   │   │
+    │   │   └── email_service.py             # [SC/SA/GW] Serviço de envio de e-mails com múltiplos provedores.
+    │   │       ├── Suporte a Brevo (Sendinblue) e Mock (para desenvolvimento).
+    │   │       ├── Renderiza templates do banco de dados (`email_templates`) com variáveis dinâmicas.
+    │   │       └── Métodos específicos como `send_welcome_email` (que não usa mais 'username') e `send_reset_password_email`.
+    │   │      	
+    │   │    
+    │   ├── utils/                           # [INT] Utilitários de baixo nível.
+    │   │   ├── __init__.py                  # [INT]
+    │   │   │	
+    │   │   └── parsing_utils.py             # [SC] Utilitários de Parsing
+    │   │       ├── Múltiplas estratégias: JSON direto, extração de JSON, markdown code blocks
+    │   │       ├── Parsing textual com regex para fallback
+    │   │       ├── Cache inteligente com hash MD5 e TTL 5min
+    │   │       ├── Métricas de performance: cache hits, success rate
+    │   │       ├── Métodos específicos: parse_detector_analysis(), safe_json_parse()
+    │   │       └── Instância global: parsing_utils
+    │   │   	
+    │   └── prompts/                         # [INT] Sistema de Prompt Engineering
+    │       ├── __init__.py                  # [INT] Pacote de prompts
+    │       │	
+    │       ├── base.py                      # [INT] Templates base e constantes
+    │       │   ├── PERFIS_CLIENTE: frio, morno, quente com descrições
+    │       │   ├── CANAIS_VENDA: instagram, whatsapp, email, telefone, presencial
+    │       │   └── BASE_TEMPLATE: estrutura comum para todos os prompts
+    │       │	
+    │       ├── registry.py                  # [INT] Registry Central de Prompts
+    │       │   ├── PROMPT_REGISTRY: 15+ prompts organizados por módulo
+    │       │   ├── PROMPT_METADATA: descrições, versões, tags, parâmetros
+    │       │   ├── Funções: get_all_prompts(), get_prompts_by_module()
+    │       │   └── Validação: obter_prompt() com fallback
+    │       │   	
+    │       ├── prompt_manager.py            # [INT] Gerenciador de Prompts
+    │       │   ├── Renderização: render() com validação de parâmetros
+    │       │   ├── Extração automática de parâmetros: _extract_parameters()
+    │       │   ├── Validação: validate_parameters()
+    │   	  │   └── Instância global: prompt_manager
+    │   	  │   	
+    │       └── templates/                   # [SC] Templates Atualizados com Contexto Personalizado
+    │           ├── __init__.py              # [INT]
+    │           ├── simulador.py             # [SC] Prompts do simulador: cliente, feedback, feedback_detalhado - COM CONTEXTO PERSONALIZADO
+    │           ├── conexao.py               # [SC] Prompts do módulo conexão: gerar_perguntas, analisar_resposta, simular_dialogo - COM CONTEXTO
+    │           ├── scripts.py               # [SC] Prompts do módulo scripts: otimizar, analisar_eficacia, gerar_variacoes - COM CONTEXTO
+    │           ├── objecoes.py              # [SC] Prompts de quebra de objeções: quebrar, predicao_objecoes - COM CONTEXTO
+    │           ├── detector.py              # [SC] Prompts do detector de vendedor chato: analisar - COM CONTEXTO
+    │           ├── contexto.py              # [SC] Prompts para ContextGuardian: contexto_alinhamento - COM CONTEXTO
+    │           └── emocional.py             # [SC] Prompts para EmotionShift: mudanca_emocional - COM CONTEXTO
+	  │
+    ├── tests/                               # [INT] Diretório para testes automatizados.
+    │   └── test_main.py                     # [INT] Testes iniciais para endpoints principais (ex: /health).
+    │
+    ├── venv/                                # [INT] Ambiente Virtual Python.
+    │   ├── Lib/           
+    │   └── Scripts/
+	  │
+    ├── utils/                               # [INT] Scripts utilitários para desenvolvimento e validação.
+    │   ├── test_gemini.py                   # [INT] Script para Teste conexão com Gemini
+    │   ├── test_openai.py                   # [INT] Script para Teste conexão com OpenAI
+    │   ├── test_mistral.py                  # [INT] Script para Teste conexão com Mistral
+    │   ├── verificar_provedores.py          # [INT] Script para verificar provedores funcionais	
+    │   ├── diagnosticar_IA.py               # [INT] Script para diagnosticar provedores IA
+    │   ├── test_api_completo.ps1            # [INT] Script PowerShell para validar APIs
+    │   ├── generate_api_key.py              # [INT] Script para gerar API Keys
+    │   ├── generate_admin_api_key.py        # [INT] Script para gerar API Keys administrativas RBAC
+    │   ├── init_ia_config.py                # [INT] Script de inicialização da configuração do Orquestrador de IA.
+    │   ├── pytest.ini                       # [INT] Arquivo de configuração para o Pytest.
+    │   ├── test_api_completo.ps1            # [INT] Script PowerShell para validar APIs
+    │   ├── monitor_performance.py 			     # [INT] Script de monitoramento de performance do sistema
+    │   ├── valida_historico.sh              # [INT] Script Shell para validar rotas de histórico no Linux/macOS.
+    │   └── valida_historico.ps1             # [INT] Script PowerShell para validar rotas de histórico no Windows.
+	  │
+    ├── requirements.txt                     # [INT] Dependências Python do projeto
+    ├── railway.json                         # [INT] Configuração de deploy no Railway
+    ├── .env                                 # [INT] Variáveis de ambiente 
+    ├── vercel.json                          # [INT] Configuração de deploy na Vercel	
+    └── README.md                            # [INT] Documentação do backend
+
+# ========== MÓDULOS DE NEGÓCIO  ==========
+
+## 1. Simulador de Conversa 
+- Chat interativo com clientes IA de 3 perfis (Frio, Morno, Quente)
+- Probabilidade de conversão em tempo real (0-100%)
+- Feedback imediato após cada mensagem
+- Dashboard visual com evolução da conversa
+- Contexto Personalizado: Histórico do usuário injetado automaticamente
+- Co-piloto Cognitivo Integrado: Análises em tempo real (ContextGuardian, ObjectionPredictor, EmotionShift) disponíveis opcionalmente.
+- Memória de Longo Prazo: Resumos automáticos baseados em histórico
+- Endpoints principais:
+	- Lógica de Sessão Híbrida:
+		- Se um `session_id` é enviado, a interação é agrupada com outras da mesma sessão.
+		- Se nenhum `session_id` é enviado, um novo é gerado e retornado na resposta, garantindo retrocompatibilidade. A aplicação cliente pode então usar este ID para continuar a sessão.
+	- POST /simulador/responder - Resposta do cliente IA. Aceita `incluir_copiloto: true` para ativar análises em tempo real. SALVA NO HISTÓRICO.
+	- POST /simulador/feedback - Análise da mensagem do vendedor + SALVA NO HISTÓRICO
+	- POST /analise/conversa - Análise preditiva completa
+	- POST /analise/probabilidade-conversao - Métricas em tempo real
+- ContextGuardian: Detecta rupturas de contexto a cada 2-3 mensagens
+- EmotionShift: Monitora mudanças emocionais do cliente
+- ObjectionPredictor: Antecipa objeções baseadas em padrões linguísticos
+- Prompt Service: obter_prompt_simulador_cliente() COM CONTEXTO PERSONALIZADO
+- History Service: Salva automaticamente cada interação + Gera resumos
+- RBAC Service: Valida acesso ao módulo simulador
+- Parsing Utils: Processa respostas da IA com fallback
+- Orquestração IA: Usa provedor ativo via IAOrchestrator
+
+## 2. Quebra de Objeções
+- Interface com 5 abas de abordagens (Empática, Valor, Prova Social, Urgência, Autoridade)
+- Respostas contextualizadas para cada objeção
+- Histórico de objeções anteriores
+- Botões de copiar para cada abordagem
+- Contexto Personalizado: Perfil comportamental do usuário considerado
+- Lógica de Sessão Híbrida: Aceita e retorna `session_id` para agrupar a interação no histórico da conversa.
+- Endpoint principal: 
+	- POST /objecoes/quebrar - Gera as 5 respostas formatadas + SALVA NO HISTÓRICO
+- ObjectionPredictor: Prevê objeções antes que surjam
+- Análise de padrões linguísticos para respostas personalizadas
+- Prompt Service: obter_prompt_quebrar_objecao() COM CONTEXTO
+- History Service: Persiste objeções e respostas
+- Parsing Utils: Extrai as 5 abordagens do texto da IA
+- Orquestração IA: Balanceamento entre provedores ativos
+
+## 3. Detector de Vendedor Chato
+- Grid responsivo com 7 métricas de análise
+- Pontuação de empatia (0-100) com barras visuais
+- Classificação do tom (Agressivo, Pouca Empatia, Equilibrado, Consultivo, Empático)
+- Exemplos corrigidos e sugestões práticas
+- Contexto Personalizado: Lacunas comportamentais identificadas
+- Co-piloto Cognitivo Integrado: Análises em tempo real (ContextGuardian, ObjectionPredictor, EmotionShift) disponíveis opcionalmente.
+- Lógica de Sessão Híbrida: Aceita e retorna `session_id` para agrupar a interação no histórico da conversa.
+- Endpoint principal:
+	- POST /detector/analisar - Análise estruturada da mensagem. Aceita `incluir_copiloto: true` para ativar análises em tempo real. SALVA NO HISTÓRICO.
+- Análise de 7 dimensões: classificação, motivo, sugestão, pontuação_empatia, nivel_pressao, indicadores_problema, exemplo_corrigido
+- Detecção de padrões de linguagem agressiva ou pouco empática
+- Prompt Service: obter_prompt_detector_analisar() COM CONTEXTO
+- Parsing Utils: parse_detector_analysis() com fallback textual
+- History Service: Armazena análises detalhadas + Atualiza perfil comportamental
+- Orquestração IA: Failover automático em caso de falha
+
+## 4. Módulo de Conexão
+- Simulação interativa em tempo real
+- Geração de perguntas personalizadas
+- Análise de respostas do vendedor com pontuação 0-100
+- Diálogos simulados com diferentes cenários
+- Contexto Personalizado: Histórico de conexões considerado
+- Lógica de Sessão Híbrida: Aceita e retorna `session_id` para agrupar a interação no histórico da conversa.
+- Endpoints principais:
+	- POST /conexao/gerar-perguntas - Perguntas contextualizadas
+	- POST /conexao/analisar-resposta - Análise com feedback
+	- POST /conexao/simular-dialogo - Diálogos completos + SALVA NO HISTÓRICO
+- Abordagem consultiva baseada em descoberta de dores
+- Técnicas de rapport building e escuta ativa
+- Transições suaves entre fases da conversa
+- Prompt Service: obter_prompt_gerar_perguntas(), obter_prompt_analisar_resposta() COM CONTEXTO
+- History Service: Persiste diálogos completos
+- RBAC Service: Controla acesso a módulo avançado
+- Orquestração IA: Cache inteligente para otimização
+
+## 5. Scripts Prontos
+- 4 modos: Biblioteca, Otimizar, Analisar, Variações
+- Pontuação de eficácia com pontos fortes/fracos
+- Variações criativas do mesmo script
+- Modelos editáveis para todos os canales
+- Contexto Personalizado: Estilo comportamental aplicado
+- Lógica de Sessão Híbrida: Aceita e retorna `session_id` para agrupar a interação no histórico da conversa.
+- Endpoints principais:
+	- POST /scripts/otimizar - Melhoria automática de scripts
+	- POST /scripts/analisar-eficacia - Análise com métricas
+	- POST /scripts/gerar-variacoes - Geração de alternativas
+- Análise de persuasão por canal específico
+- Adaptação para diferentes objetivos (venda, agendamento, educação)
+- Manutenção da essência com variações criativas
+- Prompt Service: obter_prompt_otimizar_script(), obter_prompt_analisar_eficacia() COM CONTEXTO
+- Parsing Utils: Processa variações com parsing
+- Orquestração IA: Monitoramento de saúde dos provedores
+# ========== INOVAÇÕES IMPLEMENTADAS ==========
+
+## Fluxo de Primeiro Acesso Forçado e Invalidação de Sessão
+**Problema Resolvido**: Um novo usuário recebia uma senha, mas não era forçado a trocá-la, e tokens de acesso antigos continuavam válidos após um novo login, criando uma falha de segurança.
+#
+**Solução Implementada**:
+- **Flag de Primeiro Acesso**: Adicionada a coluna `must_change_password` na tabela `users`. Ao criar um novo usuário (via integração ou signup), esta flag é definida como `true`.
+- **Invalidação de Sessão com `session_salt`**:
+  - Adicionada a coluna `session_salt` na tabela `users`.
+  - A cada login bem-sucedido, um novo `session_salt` (string aleatória) é gerado e salvo no banco para aquele usuário.
+  - Este `salt` é incluído no payload do `access_token`.
+  - O `middleware` agora valida se o `salt` do token corresponde ao `salt` atual no banco. Se não corresponder, o token é considerado inválido (de uma sessão antiga).
+- **Fluxo de Login Inteligente**:
+  - A rota `POST /auth/login`, ao validar a senha, verifica a flag `must_change_password`.
+  - Se `true`, em vez de um token de acesso normal, retorna um `temp_token` com escopo restrito (`"scope": "force_password_change"`) e um status HTTP `210`.
+  - **Nova Rota `POST /auth/force-password-change`**: Endpoint dedicado que aceita o `temp_token` e a nova senha, atualiza a senha do usuário e define `must_change_password` para `false`.
+#
+## Sistema de Planos e Auto-Cadastro de Clientes (Multi-tenancy)
+**Problema Resolvido**: A aplicação precisava de um fluxo para que novos clientes pudessem se cadastrar e ter acesso a diferentes planos com limites específicos.
+ 
+**Solução Implementada**:
+- **Fluxo de Auto-Cadastro (Self-Service Signup)**: O `signup_service.py` orquestra o cadastro de um novo **Cliente (tenant)** e seu primeiro **Usuário administrador** de uma só vez. Este é o principal método de entrada para novos clientes no sistema.
+- **Modelo de Dados**: Tabelas `clientes`, `planos` e `descontos_cliente` no PostgreSQL para criar uma arquitetura multi-tenant.
+- **Gestão de Planos**: Planos configuráveis (Trial, Starter, Professional, etc.) com diferentes limites (`max_usuarios`) e features (`JSONB`).
+- **Ciclo de Vida do Cliente**: Lógica para gerenciar o status do cliente (trial, ativo, inativo) e expiração do trial.
+- **Integração com Autenticação**: No login, o sistema retorna os dados do plano atual do cliente, permitindo que o frontend adapte a interface.
+- **RBAC e Limites**: O acesso a módulos e a criação de novos recursos (como usuários) são validados contra os limites do plano do cliente.
+- **Webhooks de Pagamento (Futuro)**: A rota `/hooks/gateway-events` existe para uma possível automação de cadastro via gateways de pagamento, mas o fluxo principal e ativo é o de auto-cadastro.
+
+## Histórico de Conversa Unificado (Híbrido)
+**Problema Resolvido**: Interações em diferentes módulos (simulador, detector, análise) eram salvas como eventos isolados, dificultando a visão completa de uma sessão de venda.
+
+**Solução Implementada**:
+- Introdução da coluna `session_id` na tabela `simulacoes`.
+- **Lógica Híbrida e Retrocompatível**:
+  - **Cliente Novo (Envia `session_id`)**: A aplicação cliente captura o `session_id` retornado na primeira resposta da API e o reenvia nas requisições subsequentes. O backend utiliza este ID para agrupar todas as interações relacionadas em uma única sessão.
+  - **Cliente Antigo (Não envia `session_id`)**: Se uma requisição chega sem `session_id`, o backend gera um novo ID único para aquela interação específica. O sistema continua funcionando como antes, salvando cada interação como um evento individual, garantindo que a aplicação atual não quebre.
+- **Novo Endpoint de Visualização**:
+  - `GET /historico/sessoes`: Retorna o histórico agrupado por `session_id`, permitindo uma visualização em formato de "conversas".
+  - `GET /historico/simulacoes`: Mantido para retrocompatibilidade, retorna a lista "plana" de interações como antes.
+- **Consistência Garantida**: A lógica foi padronizada em todos os módulos (incluindo o módulo de Conexão), garantindo que todas as interações de uma sessão sejam corretamente agrupadas.
+- **Inteligência Conectada**: O `session_id` é usado pelo Co-piloto Cognitivo para realizar análises mais profundas e contextuais sobre a conversa inteira.
+
+## Playbooks de Venda Dinâmicos
+**Problema Resolvido**: O vendedor precisa decidir manualmente qual ferramenta ou abordagem usar em cada momento da conversa.
+
+## Gestão de Descontos (Cupons)
+**Problema Resolvido**: Necessidade de criar e gerenciar cupons de desconto para campanhas de marketing e ações comerciais.
+
+**Solução Implementada**:
+- **CRUD Completo de Cupons**: Endpoints administrativos (`GET, POST, PUT, DELETE /admin/descontos`) para criar, listar, editar e excluir cupons de desconto globais.
+- **Tipos de Desconto**: Suporte para descontos de valor `FIXO` (ex: R$ 50,00) e `PERCENTUAL` (ex: 20%).
+- **Regras de Negócio**: Controle de data de expiração, número máximo de usos e status (ativo/inativo).
+- **Aplicação a Clientes**: Endpoint (`POST /admin/clientes/{id}/descontos`) para aplicar um cupom a um cliente específico, registrando o desconto em seu perfil.
+
+**Problema Resolvido**: O vendedor precisa decidir manualmente qual ferramenta ou abordagem usar em cada momento da conversa.
+
+**Solução Implementada**:
+- **Sistema Proativo de Recomendação**: O Co-piloto Cognitivo agora analisa a conversa em tempo real e, quando detecta um cenário crítico (como alta probabilidade de objeção de preço), recomenda um "Playbook" estratégico.
+- **Playbook**: É uma sequência de passos e ações sugeridas, combinando diferentes módulos do sistema (ex: usar uma abordagem do Módulo de Objeções, seguida por um script de Prova Social).
+- **Integração Híbrida**: A recomendação do Playbook é adicionada à resposta do Co-piloto (`incluir_copiloto: true`), garantindo que a funcionalidade seja opcional e não quebre a aplicação atual.
+- **Inteligência Conectada**: Utiliza os dados do `session_id` (memória de sessão) e do Co-piloto para oferecer recomendações contextuais e precisas, transformando o sistema de reativo para proativo.
+
+## 1. Memória de Longo Prazo (RAG Simples)
+
+## Fluxo de Webhook (Kiwify)
+**Problema Resolvido**: Automatizar a criação de clientes, a gestão de assinaturas e o controle de acesso com base em eventos de pagamento gerados por um gateway externo (Kiwify).
+
+**Solução Implementada**: Um sistema de webhook seguro e resiliente que escuta eventos da Kiwify e os traduz em ações concretas no ciclo de vida do cliente dentro da plataforma.
+
+### 1. Ponto de Entrada e Segurança (`hooks_routes.py`)
+- **Endpoint**: `POST /hooks/gateway-events`. Esta rota está configurada para ser o alvo dos webhooks da Kiwify.
+- **Autenticação por Assinatura (HMAC-SHA1)**: A rota **não usa** o middleware de autenticação padrão (JWT/API Key). Em vez disso, ela implementa a validação de assinatura HMAC-SHA1, que é o padrão de segurança exigido pela Kiwify.
+  - A função `_validate_kiwify_signature` calcula um hash do corpo da requisição usando o `KIWIFY_WEBHOOK_SECRET` (variável de ambiente) e o compara com a `signature` enviada nos parâmetros da URL.
+  - Isso garante que a requisição é autêntica e veio de fato da Kiwify.
+- **Resposta Resiliente**: O endpoint sempre retorna `HTTP 200 OK`, mesmo que ocorra um erro interno durante o processamento. Isso é crucial para sinalizar à Kiwify que o webhook foi recebido com sucesso, evitando reenvios (retries) desnecessários.
+
+### 2. Orquestração do Evento (`webhook_service.py`)
+- **Processamento Centralizado**: A rota, após validar a assinatura, passa o payload para o `webhook_service.process_kiwify_event`.
+- **Auditoria e Validação**:
+  1.  O evento é imediatamente logado no banco de dados (`log_webhook_event` em `webhooks_db.py`) para fins de auditoria e depuração.
+  2.  O payload é validado usando o modelo Pydantic `KiwifyWebhookPayload` (`models_hooks.py`), garantindo a integridade dos dados.
+- **Roteamento de Eventos**: O serviço identifica o `webhook_event_type` e direciona o payload para a função de tratamento específica (ex: `_handle_order_approved`, `_handle_subscription_canceled`).
+
+### 3. Lógica de Negócio e Ciclo de Vida do Cliente
+O `webhook_service` implementa a lógica para os principais eventos do ciclo de vida de uma assinatura:
+
+- **Criação e Ativação**:
+  - `_handle_order_approved` e `_handle_subscription_activated`:
+    - Se o e-mail do cliente não existe no sistema, o `signup_service` é acionado para criar um novo **Cliente (tenant)** e um **Usuário** associado, com uma senha temporária e a flag `must_change_password` ativada.
+    - Se o usuário já existe, o serviço apenas garante que seu plano e status estejam ativos.
+ 
+- **Renovação e Manutenção**:
+  - `_handle_subscription_renewed`: Garante que o status do cliente seja `ativo` e reativa os usuários, caso tenham sido desativados.
+  - `_handle_subscription_late`: Altera o status do cliente para `atrasado`, permitindo que o sistema aplique um modo de acesso restrito.
+
+- **Cancelamento e Fim de Acesso**:
+  - `_handle_subscription_canceled`: **Não revoga o acesso imediatamente**. Altera o status do cliente para `cancelado` e define uma data de expiração (`expiry_date`) com base no fim do período pago. O acesso é mantido até essa data.
+  - `_handle_order_refunded` e `_handle_chargeback`: **Revogam o acesso imediatamente**. Alteram o status do cliente para `inativo` e desativam todos os usuários associados.
+
+- **Eventos Informativos**:
+  - `_handle_billet_created`, `_handle_pix_created`, `_handle_order_rejected`: Apenas registram a informação no log para fins de análise, sem alterar o estado do cliente.
+
+### 4. Detalhamento do `webhook_service.py`
+Este serviço é o orquestrador central que aplica a lógica de negócio para cada evento recebido.
+
+- **`process_kiwify_event(payload)`**:
+  1.  **Auditoria Inicial**: A primeira ação é chamar `log_webhook_event` para registrar o payload bruto no banco de dados. Isso garante que nenhuma notificação seja perdida, mesmo que o processamento falhe.
+  2.  **Validação de Schema**: O payload é validado pelo modelo Pydantic `KiwifyWebhookPayload`, garantindo a integridade e a estrutura dos dados antes do processamento.
+  3.  **Roteamento de Eventos**: O método identifica o `webhook_event_type` e o direciona para a função de tratamento (`_handle_*`) correspondente.
+  4.  **Auditoria Final**: Após o processamento, o log do evento no banco é atualizado com o status (`processed` ou `failed`) e uma mensagem descritiva do resultado.
+
+- **Handlers de Ciclo de Vida do Cliente**:
+  - **`_handle_order_approved(data)`**:
+    - **Cenário 1 (Novo Cliente)**: Se o e-mail do cliente não existe, ele delega a criação para o `signup_service`. Isso centraliza a lógica de criação de um novo **Cliente (tenant)** e do **Usuário** associado, aplicando o plano padrão, gerando uma senha temporária e ativando a flag `must_change_password`.
+    - **Cenário 2 (Cliente Existente)**: Se o usuário já existe, o serviço apenas garante que o plano de assinatura correto esteja atribuído e que o status do cliente seja `ativo`.
+
+  - **`_handle_subscription_canceled(data)`**:
+    - **NÃO revoga o acesso imediatamente**. Em vez disso, busca a data do próximo pagamento (que não ocorrerá mais) e a define como `expiry_date` no registro do cliente, mudando seu status para `cancelado`. O acesso do usuário é mantido até essa data de expiração.
+
+  - **`_handle_order_refunded(data)` e `_handle_chargeback(data)`**:
+    - **Revogam o acesso imediatamente**. Ambos os eventos são críticos e resultam na mesma ação: o status do cliente é alterado para `inativo` e todos os usuários associados a esse cliente são desativados (`is_active = false`).
+
+  - **`_handle_subscription_late(data)`**:
+    - Altera o status do cliente para `atrasado`. Isso permite que o sistema aplique regras de negócio para contas com pagamentos pendentes, como exibir avisos ou limitar o acesso a certas funcionalidades.
+
+  - **`_handle_subscription_renewed(data)` e `_handle_subscription_activated(data)`**:
+    - Garantem que o cliente tenha acesso total. O status do cliente é definido como `ativo` e todos os seus usuários são reativados, caso tenham sido desativados por um status anterior (como `atrasado`).
+
+  - **Handlers Informativos (`_handle_billet_created`, `_handle_pix_created`, `_handle_order_rejected`)**:
+    - Estes eventos não alteram o estado do cliente ou do usuário. Eles são apenas registrados nos logs para fins de análise de negócio, como identificar tentativas de compra que não foram concluídas.
+
+
+**Problema Resolvido**: Sistema "esquecia" interações anteriores, tratando cada conversa como isolada
+
+**Solução Implementada**:
+- history_service.get_user_summary(): Gera resumos estruturados do histórico
+- Cache LRU com TTL 5min para otimização
+- Análise de probabilidade média e lacunas comportamentais
+- Exemplo: "Nas últimas 3 simulações, probabilidade média = 65%. Lacuna: empatia, clareza."
+
+**Integração**:
+- Disponível apenas para autenticação JWT (não API Keys)
+- Placeholder {{historico_usuario}} injetado automaticamente nos prompts
+- Fallback seguro se histórico insuficiente
+
+## 2. Perfis Comportamentais por Usuário
+**Problema Resolvido**: Falta de personalização baseada no estilo de venda do usuário
+
+**Solução Implementada**:
+- history_service.get_user_behavioral_profile(): Analisa padrões comportamentais
+- Classificação: AGRESSIVO, EMPÁTICO, TÉCNICO, CONSULTIVO, NEUTRO
+- Identificação automática de lacunas: empatia, escuta_ativa, clareza, manejo_objecoes
+- Endpoint: GET /historico/perfil-comportamental
+
+**Integração**:
+- Placeholder {{perfil_comportamental}} nos prompts
+- Instruções de ajuste específicas baseadas no perfil
+- Exemplo: "O vendedor tende a ser AGRESSIVO. Corrija para ser mais consultivo."
+
+## 3. Infraestrutura A/B Testing de Prompts
+**Problema Resolvido**: Dificuldade em testar e iterar diferentes versões de prompts
+
+**Solução Implementada**:
+- Tabela prompt_versoes no banco de dados
+- Funções: get_prompt_versoes(), create_prompt_versao(), update_prompt_versao_status()
+- Schemas Pydantic: PromptVersaoCreate, PromptVersaoResponse
+- Sistema de pesos para distribuição de tráfego
+
+**Pronto para Expansão**:
+- Endpoints administrativos para gestão de versões
+- Sistema de métricas para comparação de performance
+- Rollback automático entre versões
+
+## 4. Integração de Contexto Personalizado
+**Problema Resolvido**: Prompts genéricos não consideravam histórico e perfil do usuário
+
+**Solução Implementada**:
+- prompt_service.render_with_user_context(): Renderização com contexto
+- Placeholders dinâmicos em todos os templates:
+  - {{historico_usuario_placeholder}}
+  - {{perfil_comportamental_placeholder}} 
+  - {{instrucao_ajuste_placeholder}}
+- Fallback seguro se contexto não disponível
+
+**Impacto**:
+- Respostas mais personalizadas e relevantes
+- Aprendizado contínuo baseado em histórico
+- Adaptação automática ao estilo do usuário
+
+# ========== CAMADAS TÉCNICAS (BACKEND) ==========
+## Sistema de Orquestração IA (ia_orchestrator.py) 
+# Função: Gerenciamento dinâmico de múltiplos provedores de IA com cache otimizado
+- Balanceamento Inteligente: Seleção por prioridade e saúde das chaves
+- Failover Automático: Transição suave entre provedores em falha
+- Cache TTL Individual: Entradas expiram individualmente (15-30s)
+- Monitoramento: Health check contínuo das chaves ativas
+- Métricas de Performance: Cache hit ratio, tempo resposta, sucessos/falhas
+- Segurança: Chaves reais armazenadas criptografadas
+- Configuração Dinâmica: Via banco de dados, sem redeploy
+- Invalidação Inteligente: Apenas caches relevantes limpos
+
+## History Service (history_service.py)
+# Função: Persistência segura + Memória de Longo Prazo + Perfis Comportamentais
+ - Isolamento Garantido: Salva apenas para autenticação JWT (não para API Keys)
+- Sanitização Automática: Remove tokens, IPs, informações sensíveis antes de salvar
+- Validação de Ownership: validate_simulation_ownership() impede acesso cruzado
+- Agrupamento de Sessões: Utiliza `session_id` para agrupar interações de múltiplos módulos em uma única conversa.
+- Memória de Longo Prazo: get_user_summary() com cache LRU + TTL 5min.
+- Salva Análise do Co-piloto: Persiste os dados gerados para cada interação.
+- Perfis Comportamentais: get_user_behavioral_profile() analisa padrões
+- Análise de Lacunas: Identifica áreas de melhoria recorrentes
+- Fallback Robusto: Continua funcionando mesmo se salvamento falhar
+
+## Prompt Service (prompt_service.py) 
+# Função: Renderização de prompts com contexto personalizado
+ - Renderização Centralizada: render() com validação de parâmetros
+- Contexto Personalizado: render_with_user_context() injeta histórico + perfil
+- Integração com History Service: _get_user_context() obtém dados personalizados
+- Placeholders Dinâmicos: Prepara contexto formatado para templates
+- Detecção de Módulo: _extract_module_from_prompt() para contexto específico
+- Fallback Seguro: Renderização normal se contexto não disponível
+
+## RBAC Service (rbac_service.py)
+# Função: Controle de acesso granular baseado em perfis
+ - Cache Inteligente: @lru_cache(maxsize=256) para permissões de usuário e API Keys
+- Validação Centralizada: check_module_access() unifica verificação para JWT e API Keys
+- Mapeamento Automático: _extract_module_from_path() converte endpoints → módulos
+- Auditoria: _log_super_access() rastreia uso da API Key master
+- Permissões Diferenciadas: Usuários JWT vs API Keys com perfis específicos
+
+## Parsing Utils (parsing_utils.py)
+# Função: Processamento robusto de respostas de IA com cache otimizado
+ - Cache Inteligente: Hash MD5 + TTL 5 minutos com limpeza automática
+- Múltiplas Estratégias: JSON direto, extração de JSON, markdown code blocks
+- Fallback Textual: Regex patterns para quando JSON falha
+- Parsing Específico: parse_detector_analysis() para análise estruturada
+- Métricas de Performance: Cache hits, success rate, fallback usage
+- Resiliência: Continua funcionando com respostas inesperadas
+
+## Audit Service (audit_service.py)
+# Função: Rastreamento de operações sensíveis para compliance
+ - Logs Estruturados: AuditAction categoriza operações (SUPER_ACCESS, MODULE_ACCESS, DATA_ACCESS)
+- Rastreamento Completo: Timestamp, IP, user-agent, método, path
+- Métodos Específicos: log_super_access(), log_module_access()
+- Armazenamento: Mantém últimos 10k logs em memória para análise
+
+## Crypto Manager (crypto_manager.py)
+# Função: Criptografia segura de chaves de API reais
+- Algoritmo Forte: Fernet com PBKDF2HMAC-SHA256
+- Derivação de Chave: Master key do ambiente + salt fixo
+- Operações: encrypt_key(), decrypt_key() para chaves reais
+- Fallback: Chave temporária se master key não configurada
+
+## Co-piloto Cognitivo
+### ContextGuardian
+# Problema Resolvido: Vendedores perdem leads ao mudar abruptamente de assunto
+- Monitoramento Contínuo: Analisa contexto implícito vs explícito
+- Detecção de Rupturas: Identifica quando vendedor está "fora de sintonia"
+- Sugestões de Transição: Oferece frases para realinhar naturalmente
+- Endpoint: POST /analise/contexto-alinhamento
+
+### ObjectionPredictor  
+# Problema Resolvido: Vendedores são pegos de surpresa por objeções
+- Análise Preditiva: Detecta padrões linguísticos que indicam objeções futuras
+- Base de Conhecimento: Cruzamento com objeções comuns por nicho
+- Abordagem Preventiva: Sugere incorporar respostas naturalmente na conversa
+- Endpoint: POST /analise/predicao-objecoes
+
+### EmotionShift
+# Problema Resolvido: Vendedores não percebem mudanças emocionais sutis
+- Monitoramento Emocional: Análise contínua de tom através de PLN
+- Detecção de Virada: Identifica pontos onde emoção muda (positivo/negativo)
+- Sugestões Táticas: Ajustes específicos baseados na mudança detectada
+- Endpoint: POST /analise/mudanca-emocional
+
+# ========== SISTEMA DE ORQUESTRAÇÃO IA DINÂMICA ==========
+
+## ARQUITETURA DO ORQUESTRADOR IA
+
+### Componentes Principais:
+1. IAOrchestrator (ia_orchestrator.py)
+   - Balanceamento inteligente entre provedores
+   - Failover automático em caso de falhas
+   - Cache TTL individual para otimização de performance
+   - Monitoramento de saúde das chaves
+   - Métricas de performance em tempo real
+
+2. KeyManager (key_manager.py) 
+   - Hash e mascaramento de chaves
+   - Validação de formato por provedor
+   - Geração de descrições automáticas
+
+3. CryptoManager (crypto_manager.py)
+   - Criptografia Fernet com PBKDF2HMAC
+   - Armazenamento seguro de chaves reais
+   - Master key derivada de CRYPTO_MASTER_KEY
+
+4. Tabelas de Banco de Dados (database.py)
+   - ia_provedores: Provedores configurados (Gemini, Mistral, etc.)
+   - ia_chaves: Metadados e hash das chaves
+   - ia_chaves_seguras: Chaves reais criptografadas
+   - configuracoes_sistema: Configurações dinâmicas
+   - prompt_versoes: Infraestrutura para A/B testing
+
+### Fluxo de Orquestração:
+1. Inicialização: init_ia_config.py popula banco com chaves reais criptografadas
+2. Seleção: Orquestrador escolhe melhor provedor baseado em prioridade e saúde
+3. Cache: Verifica cache TTL individual antes de chamar API
+4. Recuperação: Obtém chave real descriptografada do banco
+5. Chamada: Executa chamada à API do provedor selecionado
+6. Monitoramento: Marca sucesso/falha e atualiza métricas
+7. Cache: Armazena resposta com TTL individual
+8. Fallback: Se todos falharem, ativa modo mock automaticamente
+
+### Provedores Suportados:
+1. Gemini (Prioridade 1): models/gemini-2.0-flash, gemini-pro
+2. Mistral (Prioridade 2): mistral-tiny, mistral-small, mistral-medium  
+3. OpenAI (Prioridade 3): gpt-3.5-turbo, gpt-4
+4. Azure (Prioridade 4): Qualquer deployment configurado
+5. Hugging Face (Prioridade 5): microsoft/Phi-3-mini-4k-instruct
+6. Mock (Fallback): Respostas realistas quando todos falham
+
+### Características do Sistema:
+- Dinâmico: Configuração via banco, sem necessidade de redeploy
+- Resiliente: Continua funcionando mesmo com múltiplas falhas
+- Seguro: Chaves reais armazenadas criptografadas
+- Eficiente: Cache TTL individual e balanceamento de carga
+- Monitorável: Status completo do sistema via /admin/ia/status
+- Performance: Cache hit ratio >70%, latência p95 <1.5s
+
+# ========== SEGURANÇA E CONFORMIDADE ==========
+
+## Autenticação Híbrida:
+- JWT: Para aplicação web (usuários humanos) - expira em 7 dias
+- API Key: Para integrações e Swagger - perfis específicos
+- Super Acesso: API Key master do .env ignora RBAC (com auditoria)
+
+## RBAC - 4 Perfis Granulares:
+- admin: Acesso total + gestão de usuários/chaves + auditoria
+- coach: Todos os módulos + histórico de outros usuários
+- vendedor: Simulador, Objeções, Detector, Conexão, Scripts, Histórico
+- demo: Apenas Simulador, Objeções, Histórico (para trial)
+
+## Rate Limiting Diferenciado:
+- JWT (Humanos): 200 requests/minuto
+- API Key (Integrações): 1000 requests/minuto  
+- Super Acesso: 5000 requests/minuto
+- IP Base: 50 requests/minuto para rotas não autenticadas
+
+## Proteção de Dados:
+- Isolamento Total: Usuário A nunca vê dados do Usuário B
+- Sanitização Automática: Remoção de tokens, IPs, informações sensíveis
+- Validação de Ownership: Verificação em todas as operações de dados
+- Persistência Condicional: Histórico salvo apenas para JWT (não API Keys)
+- Memória Segura: Resumos e perfis apenas para usuários autenticados
+
+## Sistema de Logs da API (Endpoint `/admin/logs/api`)
+- **Registro Abrangente**: Todas as requisições que passam pelo middleware são registradas na tabela `api_logs`, independentemente de sucesso (2xx) ou falha (4xx/5xx).
+- **Dados Enriquecidos**: Cada log inclui:
+    - `username`: Nome do usuário autenticado.
+    - `cliente_id`: ID do cliente (tenant) associado ao usuário.
+    - `razao_social`: Razão social do cliente.
+    - `auth_type`: Método de autenticação (ex: `jwt`, `api_key`).
+    - `plano`: Nome do plano de assinatura do cliente.
+- **Detalhes de Erro (Coluna `details` JSONB)**:
+    - Em caso de requisições com status `4xx` ou `5xx`, a coluna `details` (tipo JSONB) é preenchida com informações valiosas para depuração, como:
+        - `error_type`: Tipo da exceção.
+        - `error_detail`: Mensagem detalhada do erro.
+        - `traceback`: As últimas linhas do traceback do Python (para erros 5xx).
+        - `request_body`: O corpo da requisição que causou o erro (se disponível e legível).
+    - **Performance Otimizada**: A escrita no banco de dados é feita de forma assíncrona em uma thread separada, garantindo que o logging não impacte o tempo de resposta da API.
+    - Para requisições bem-sucedidas, este campo permanece `null`, otimizando o armazenamento e a performance.
+- **Funcionalidades de Filtragem e Busca**:
+    - `exclude_admin` (boolean): Filtra logs para excluir requisições feitas por usuários com perfis de administrador ('admin', 'coach').
+    - `search` (string): Permite busca por termo livre nos campos `message`, `path`, `razao_social` ou `username`.
+- **Padronização de Respostas de Erro**: Todas as exceções HTTP agora retornam um JSON com a chave `detail` (ex: `{"detail": "Mensagem de erro"}`), facilitando o tratamento no frontend.
+
+## Correções e Refinamentos Recentes
+- **Inicialização do Banco de Dados**: Corrigido erro de sintaxe na criação da tabela `api_logs` em `database_inicializacao.py`, garantindo que todas as colunas (incluindo `cliente_id`, `razao_social`, `auth_type`, `plano`, `details`) sejam criadas corretamente.
+- **Persistência de Logs**: O `logging_service.py` foi corrigido para gerenciar corretamente a conexão com o banco e o `commit` das transações, garantindo que os logs sejam efetivamente salvos.
+- **Ativação do Logging**: A inicialização do serviço de logging no `main.py` foi movida para fora de blocos condicionais, garantindo sua ativação em ambiente de produção e armazenando a referência do `listener` para evitar que a thread seja encerrada.
+- **Middleware Robusto**: O `middleware.py` foi aprimorado para chamar o logger de forma correta, passando os dados estruturados via `extra`, e para coletar informações ricas para a coluna `details` em caso de erro.
+
+## Melhorias de Estabilidade e Performance (Novembro/2025):
+## Melhorias de Performance e Escalabilidade (Novembro/2025):
+- **Refatoração Assíncrona Completa**: Todo o fluxo de chamadas para a IA, desde as rotas (`async def`) até o orquestrador (`ia_orchestrator.py`), foi refatorado para ser totalmente assíncrono. Isso elimina o bloqueio do *event loop* do Python, garantindo que a API possa lidar com um grande volume de usuários simultâneos sem degradação de performance.
+- **Otimização de Cache para Alta Carga**: Implementado um cache de 5 segundos na função `get_globally_sorted_keys` do orquestrador de IA. Isso reduz drasticamente as consultas ao banco de dados durante picos de tráfego, melhorando o tempo de resposta e a resiliência do sistema.
+
+## Auditoria e Compliance:
+- **Validação Completa do Módulo de Histórico**: Realizada validação de ponta-a-ponta, confirmando que a escrita de interações (via rotas de IA) e a leitura (via rotas `/historico/*`) estão funcionando corretamente, garantindo a integridade do ciclo de vida dos dados do usuário.
+
+## Auditoria e Compliance:
+- Logs Estruturados: Todas as operações sensíveis rastreadas
+- Super Acesso: Uso da API Key master totalmente auditado
+- Acesso a Dados: Tentativas de acesso cruzado registradas
+- Módulos RBAC: Permissões concedidas/negadas logadas
+
+## Sistema Multi-IA com Fallback:
+- Ordem de Preferência: Gemini → Mistral → OpenAI → Azure → Hugging Face → Mock
+- Cache Inteligente: Respostas em cache para otimização
+- Fallback Automático: Transição suave entre modos online/offline
+- Resiliência: Continua funcionando mesmo com falhas de provedores
+
+# Fluxo da KIWIFI
+NOVOS CLIENTES:
+  order_approved → Cria cliente
+  subscription_activated → Cria/Ativa cliente
+
+CICLO DE ASSINATURA:
+  subscription_renewed → Acesso mantido
+  subscription_late → Acesso restrito  
+  subscription_canceled → Acesso até expirar
+
+REVOGAÇÃO DE ACESSO:
+  order_refunded → Acesso revogado
+  chargeback → Acesso revogado
+
+AGUARDANDO PAGAMENTO:
+  billet_created → Apenas log
+  pix_created → Apenas log
+
+FALHAS:
+  order_rejected → Log do motivo
+
+# ========== ENDPOINTS DA API ==========
+
+## NOTA IMPORTANTE:
+- **Venda com Conexão**: É a aplicação que o cliente usa.
+- **Admin**: É o sistema que nós, como donos da empresa, usamos para fazer a gestão do sistema do nosso cliente (backoffice).
+- **Ambos usam a mesma API.**
+
+## TAGS SWAGGER:
+
+### ADMINISTRAÇÃO E GESTÃO
+- Geral: Endpoints gerais do sistema - Health check e status
+- Administração: Gestão de usuários, perfis, API Keys e configurações
+- Admin - IA: Gestão do sistema de orquestração IA
+
+### API VENDA MAIS (Core Business):
+- Analise: Análises preditivas e emocionais
+- Simulador: Simulador de conversas com clientes IA
+- Objecoes: Sistema de quebra de objeções
+- Detector: Detector de vendedor chato
+- Conexão: Módulo de conexão avançada
+- Scripts: Otimização e análise de scripts
+- Histórico: Histórico de simulações e onboarding
+- Prompts: Gestão e renderização de prompts
+
+### WEBHOOKS E INTEGRAÇÕES
+- Webhooks: Endpoints para receber eventos de sistemas externos (ex: Kiwify).
+ 
+## Endpoints Públicos (sem autenticação)
+- GET / - Status da API + info do Multi-IA + RBAC
+- GET /health - Health check completo do sistema
+- GET /docs - Documentação Swagger automática (protegida por API Key)
+- GET /openapi.json - Schema OpenAPI (protegido por API Key)
+- GET /redoc - Documentação Redoc (protegida por API Key)
+- GET /planos - Lista os planos comerciais disponíveis para assinatura.
+ 
+## Endpoints de Autenticação e Usuário (OCULTOS do Swagger):
+- POST /auth/signup - **Ponto de entrada principal para auto-cadastro**. Cria um novo Cliente (tenant) e seu primeiro Usuário administrador.
+- POST /auth/login - Login híbrido (usuário ou email) + senha, retorna JWT para um usuário existente.
+- POST /auth/force-password-change - Endpoint para troca de senha obrigatória no primeiro login. Requer `temp_token`.
+- POST /auth/register - Adiciona um novo usuário a um Cliente (tenant) já existente.
+- GET /auth/me - Obter dados do usuário atual + perfil RBAC
+- PUT /auth/profile - Atualiza dados do usuario (email, nome, senha, etc )
+- GET /auth/profile - Retorna dados do usuario 
+- POST /auth/reset-password - Inicia o fluxo de redefinição de senha via e-mail.
+- POST /me/plano - Permite ao usuário autenticado mudar seu plano de assinatura.
+
+## Endpoints de Memória e Perfis (COM autenticação JWT):
+- GET /historico/perfil-comportamental - Perfil comportamental do usuário
+- GET /historico/resumo/{modulo} - Resumo do histórico por módulo
+#
+## Endpoints de Histórico e Onboarding (COM autenticação JWT + RBAC):
+- POST /historico/simulacao - Salva simulação vinculada ao usuário
+- GET /historico/sessoes - Lista o histórico de interações agrupado por sessões de conversa.
+- GET /historico/simulacoes - Lista simulações apenas do usuário logado via HistoryService
+- GET /historico/onboarding - Retorna dados iniciais para novos usuários (simulações exemplo + scripts)
+
+## Endpoints de Integrações (Webhooks):
+- POST /integracoes/pagamentos - Ponto de entrada para notificações de gateways (ex: Kiwify).
+ - POST /integracoes/whatsapp/webhook - Ponto de entrada para webhooks do provedor Waha (WhatsApp). Implementação:
+   - `app/routes/waha_routes.py` — Router FastAPI que expõe o endpoint `POST /integracoes/whatsapp/webhook`.
+   - `app/services/waha_service.py` — Serviço que valida assinatura (HMAC), loga evento em `webhook_events` e cria registro anônimo em `simulacoes`.
+   - Recomendações: configurar `WAHA_WEBHOOK_SECRET` no `.env`, implementar deduplicação por `message_id` e mapeamento número→usuário para associação automática de histórico.
+  - Autenticação: Header `X-API-KEY-INTEGRACOES` ou Query Param `?validation_code=`.
+
+## Endpoints de Webhooks :
+- POST /hooks/gateway-events - Recebe eventos de gateways de pagamento.
+
+## Endpoints de E-mail (Protegidos por API Key de E-mail):
+- GET /email/status - Retorna o status do serviço de e-mail e provedores configurados.
+- POST /email/test - Envia um e-mail de teste para validar a configuração do serviço.
+
+## Endpoints de Gerenciamento de Prompts (COM autenticação):
+- GET /prompts - Lista todos os prompts disponíveis
+- GET /prompts?modulo=simulador - Lista prompts por módulo
+- GET /prompts/{prompt_name} - Informações detalhadas de um prompt
+- POST /prompts/{prompt_name}/render - Renderiza prompt (desenvolvimento)
+
+## Endpoints de A/B Testing (APENAS admin via JWT)
+- GET /admin/prompt-versoes - Lista versões de prompts
+- POST /admin/prompt-versoes - Cria nova versão de prompt
+- PUT /admin/prompt-versoes/{id} - Atualiza versão de prompt
+- GET /admin/prompt-versoes/ativas - Lista versões ativas de prompts para A/B testing
+
+## Endpoints Administrativos de Descontos (APENAS admin via JWT):
+- GET /admin/descontos - Lista todos os cupons de desconto globais.
+- POST /admin/descontos - Cria um novo cupom de desconto.
+- PUT /admin/descontos/{id} - Atualiza um cupom existente.
+- DELETE /admin/descontos/{id} - Exclui um cupom.
+- POST /admin/clientes/{id}/descontos - Aplica um cupom a um cliente específico.
+
+## Endpoints Administrativos RBAC (APENAS admin via JWT):
+- GET /admin/perfis - Lista todos os perfis e permissões
+- GET /admin/modulos - Lista todos os módulos e seus endpoints
+- POST /admin/api-keys - Gerar nova chave API com perfil específico
+- GET /admin/api-keys - Listar todas as API Keys ativas
+- DELETE /admin/api-keys/{api_key_id} - Revogar API Key
+- PUT /admin/usuarios/{username}/perfil - Alterar perfil de usuário
+
+## Endpoints Administrativos IA:
+# Usado pelo Admin
+- GET /admin/ia/provedores - Listar provedores configurados
+- PUT /admin/ia/provedores/{id} - Atualizar provedor
+- GET /admin/ia/chaves - Listar chaves ativas
+- POST /admin/ia/chaves - Adicionar nova chave
+- GET /admin/ia/chaves-globais-ordenadas - Visualiza a ordem de prioridade das chaves que o orquestrador usará.
+- PUT /admin/ia/chaves/{id}/toggle - Ativar/desativar chave
+- GET /admin/ia/status - Status completo do sistema
+- GET /admin/ia/performance - Métricas de performance do sistema
+# Usado pelo Admin
+- POST /admin/ia/cache/clear - Limpar caches do sistema IA
+
+## Endpoints Protegidos por Módulo (COM autenticação JWT/API Key + RBAC):
+#
+### Módulo Simulador:
+- POST /simulador/responder - Resposta do cliente IA. Aceita e retorna `session_id`. SALVA NO HISTÓRICO + CONTEXTO.
+- POST /simulador/feedback - Análise da mensagem do vendedor. Aceita e retorna `session_id`. SALVA NO HISTÓRICO + CONTEXTO.
+
+### Módulo Objeções:
+- POST /objecoes/quebrar - Gera 5 respostas para objeções. Aceita e retorna `session_id`. SALVA NO HISTÓRICO + CONTEXTO.
+
+### Módulo Detector:
+- POST /detector/analisar - Analisa tom da mensagem. Aceita `incluir_copiloto: true` para ativar análises em tempo real. Aceita e retorna `session_id`. SALVA NO HISTÓRICO + CONTEXTO.
+
+### Módulo Conexão:
+- POST /conexao/gerar-perguntas - Gera perguntas de conexão personalizadas + CONTEXTO
+- POST /conexao/analisar-resposta - Analisa respostas do vendedor
+- POST /conexao/simular-dialogo - Simula diálogos completos. Aceita e retorna `session_id`. SALVA NO HISTÓRICO + CONTEXTO.
+
+### Módulo Scripts:
+- POST /scripts/otimizar - Otimiza scripts de vendas. Aceita e retorna `session_id`. SALVA NO HISTÓRICO + CONTEXTO.
+- POST /scripts/analisar-eficacia - Analisa eficácia de scripts + CONTEXTO
+- POST /scripts/gerar-variacoes - Gera variações de scripts + CONTEXTO
+
+### Módulo Análise Preditiva:
+- POST /analise/conversa - Analisa conversa completa e retorna métricas preditivas. Aceita e retorna `session_id`.
+- POST /analise/probabilidade-conversao - Calcula probabilidade de conversão em tempo real
+- POST /analise/contexto-alinhamento - Analisa alinhamento contextual e detecta rupturas (ContextGuardian)
+- POST /analise/predicao-objecoes - Prevê objeções baseadas em padrões comportamentais (ObjectionPredictor)
+- POST /analise/mudanca-emocional - Detecta mudanças emocionais e sugere ajustes (EmotionShift)
+
+# ========== FLUXO DE DADOS ==========
+
+## Fluxo Geral do Sistema:
+[Usuário acessa frontend]
+→ [Login com JWT ou integração usa API Key]
+→ [Seleciona módulo e produto]
+→ [Interage com IA através dos endpoints]
+→ [Middleware valida autenticação + RBAC]
+→ [History Service salva interação (apenas JWT) + Atualiza memória]
+→ [Prompt Service injeta contexto personalizado (histórico + perfil)]
+→ [Sistema Multi-IA processa com melhor provedor + cache]
+→ [Parsing Utils processa resposta com cache]
+ → [Frontend exibe resultados + métricas]
+→ [Audit Service registra operação]
+#
+##  Fluxo de Contexto Personalizado:
+[Requisição chega ao endpoint]
+→ [Se autenticação JWT: History Service obtém histórico recente]
+→ [History Service analisa perfil comportamental]
+→ [Prompt Service injeta placeholders no template:
+   - {{historico_usuario_placeholder}}: "CONTEXTO DO VENDEDOR: Nas últimas 3 simulações..."
+   - {{perfil_comportamental_placeholder}}: "PERFIL COMPORTAMENTAL: EMPÁTICO\nLACUNAS: clareza"
+   - {{instrucao_ajuste_placeholder}}: "INSTRUÇÃO ESPECÍFICA: Simplifique a linguagem técnica"]
+→ [IA processa prompt enriquecido com contexto]
+→ [Resposta mais personalizada e contextualizada]
+#
+##  Fluxo de Memória de Longo Prazo:
+[Usuário completa interação]
+→ [History Service salva simulação no banco]
+→ [Cache LRU atualizado com novo histórico]
+→ [Após 3+ simulações: Sistema gera resumos automáticos]
+→ [Perfil comportamental atualizado com novos padrões]
+ → [Próxima interação: Contexto personalizado já disponível]
+#
+# ========== STATUS DO PROJETO ==========
+
+## Resumo
+- **Versão**: 2.1.0 
+- **Status**: Produção Validada + Inovações Implementadas
+- **Última Atualização**: Memória + Contexto Personalizado + Perfis Comportamentais
+ - **Funcionalidades**: 
+	- Simulador de Conversa com Análise Preditiva
+	- Sistema Multi-IA com Orquestração Dinâmica 
+	- Métricas em Tempo Real com Cache Otimizado
+	- Quebra de Objeções com 5 Abordagens
+	- Detector de Vendedor Chato
+	- Scripts Prontos Inteligentes
+	- Módulo de Conexão com Simulação Interativa	
+	- Sistema de Autenticação Híbrida (JWT + API Key)
+	- Banco PostgreSQL
+	- ContextGuardian - Detector de Ruptura de Contexto
+	- ObjectionPredictor - Antecipador de Objeções  
+	- EmotionShift - Detector de Mudanças Emocionais
+	- Sistema de Historico - Persistência automática por usuário via HistoryService
+	- Oboarding - Dados exemplo para novos usuários
+	- Sistema RBAC hibrido - Controle granular de acesso via RBACService
+	- Histórico Unificado - Agrupamento de interações de múltiplos módulos em sessões de conversa.
+	- Gestão Administrativa - Endpoints para gestão de usuários e chaves
+	- Cache TTL Individual em Orquestrador
+	- Métricas de Performance Integradas
+	- Parsing Utils com Cache Inteligente
+	- Memória de Longo Prazo (RAG Simples)
+	- Perfis Comportamentais por Usuário
+	- Infraestrutura A/B Testing de Prompts
+	- Integração de Contexto Personalizado

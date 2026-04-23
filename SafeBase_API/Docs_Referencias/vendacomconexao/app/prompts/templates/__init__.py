@@ -1,0 +1,1 @@
+# Templates de prompts organizados por módulo

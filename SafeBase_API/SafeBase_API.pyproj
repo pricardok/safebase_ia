@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.Python.Sdk" ToolsVersion="4.0">
+  <PropertyGroup>
+    <ProjectGuid>{DUMMY-GUID-0000-0000-000000000000}</ProjectGuid>
+    <ProjectType>Python</ProjectType>
+    <Interpreter>Python 3.11</Interpreter>
+  </PropertyGroup>
+  <ItemGroup>
+    <Folder Include="app\" />
+  </ItemGroup>
+  <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
+</Project>

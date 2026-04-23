@@ -1,0 +1,45 @@
+# Logs
+logs
+*.log
+
+# Diretórios
+venv/
+documentacao/
+scripts/
+tests/
+tools/
+utils/
+
+# Editor directories and files
+.vscode/ 
+
+# Test cache
+.pytest_cache/
+
+
+# Arquivos de ambiente
+.env
+.env.*
+!.env.example
+
+# Arquivos de backup e cópia
+* copy*
+* backup*
+* old*
+* - Copia*
+*_old*
+*_copy*
+*backup*
+
+# Arquivos temporários
+*.tmp
+*.temp
+
+# Arquivos específicos do projeto
+*.zip
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd

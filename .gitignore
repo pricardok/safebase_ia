@@ -1,0 +1,43 @@
+﻿.vs/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.cache
+*.pdb
+*.log
+*.vsix
+*.tmp
+*.temp
+Thumbs.db
+.DS_Store
+
+# Visual Studio build results
+**/bin/
+**/obj/
+**/TestResults/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.sqlite3
+*.db
+*.db-journal
+.venv/
+
+# SQL Server / Visual Studio database artifacts
+*.dbmdl
+*.jfm
+*.publish.xml
+
+# Local environment files
+.env
+.env.*
+
+# Packages folder
+packages/
+
+/SafebaseZabbix/SafebaseZabbix.dbmdl

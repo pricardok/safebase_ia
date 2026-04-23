@@ -1,0 +1,183 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <Name>SafeBase</Name>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectVersion>4.1</ProjectVersion>
+    <ProjectGuid>{6a9ad8d4-cbfb-4a28-8498-6f6beca61cf3}</ProjectGuid>
+    <DSP>Microsoft.Data.Tools.Schema.Sql.Sql100DatabaseSchemaProvider</DSP>
+    <OutputType>Database</OutputType>
+    <RootPath>
+    </RootPath>
+    <RootNamespace>SafeBase</RootNamespace>
+    <AssemblyName>SafeBase</AssemblyName>
+    <ModelCollation>1033, CI</ModelCollation>
+    <DefaultFileStructure>BySchemaAndSchemaType</DefaultFileStructure>
+    <DeployToDatabase>True</DeployToDatabase>
+    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
+    <TargetLanguage>CS</TargetLanguage>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <SqlServerVerification>False</SqlServerVerification>
+    <IncludeCompositeObjects>True</IncludeCompositeObjects>
+    <TargetDatabaseSet>True</TargetDatabaseSet>
+    <Trustworthy>True</Trustworthy>
+    <PermissionSet>EXTERNAL_ACCESS</PermissionSet>
+    <TargetDatabase>SafeBase</TargetDatabase>
+    <AssemblyOwner>dbo</AssemblyOwner>
+    <SignAssembly>False</SignAssembly>
+    <AssemblyOriginatorKeyFile>..\Bibliotecas\Initdb.pfx</AssemblyOriginatorKeyFile>
+    <GenerateSqlClrSymbols>True</GenerateSqlClrSymbols>
+    <IsEncryptionOn>True</IsEncryptionOn>
+    <DatabaseChaining>True</DatabaseChaining>
+    <DacVersion>2.0.1</DacVersion>
+    <TargetFrameworkProfile />
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <OutputPath>bin\Release\</OutputPath>
+    <BuildScriptName>$(MSBuildProjectName).sql</BuildScriptName>
+    <TreatWarningsAsErrors>False</TreatWarningsAsErrors>
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <DefineDebug>false</DefineDebug>
+    <DefineTrace>true</DefineTrace>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <OutputPath>bin\Debug\</OutputPath>
+    <BuildScriptName>$(MSBuildProjectName).sql</BuildScriptName>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <DefineDebug>true</DefineDebug>
+    <DefineTrace>true</DefineTrace>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+  </PropertyGroup>
+  <PropertyGroup>
+    <VisualStudioVersion Condition="'$(VisualStudioVersion)' == ''">11.0</VisualStudioVersion>
+    <!-- Default to the v11.0 targets path if the targets file for the current VS version is not found -->
+    <SSDTExists Condition="Exists('$(MSBuildExtensionsPath)\Microsoft\VisualStudio\v$(VisualStudioVersion)\SSDT\Microsoft.Data.Tools.Schema.SqlTasks.targets')">True</SSDTExists>
+    <VisualStudioVersion Condition="'$(SSDTExists)' == ''">11.0</VisualStudioVersion>
+  </PropertyGroup>
+  <Import Project="$(SQLDBExtensionsRefPath)\Microsoft.Data.Tools.Schema.SqlTasks.targets" Condition="'$(SQLDBExtensionsRefPath)' != ''" />
+  <Import Project="$(MSBuildExtensionsPath)\Microsoft\VisualStudio\v$(VisualStudioVersion)\SSDT\Microsoft.Data.Tools.Schema.SqlTasks.targets" Condition="'$(SQLDBExtensionsRefPath)' == ''" />
+  <Import Condition="'$(SQLDBExtensionsRefPath)' == ''" Project="$(MSBuildExtensionsPath)\Microsoft\VisualStudio\v$(VisualStudioVersion)\SSDT\Microsoft.Data.Tools.Schema.SqlTasks.targets" />
+  <ItemGroup>
+    <Folder Include="Properties" />
+    <Folder Include="Core" />
+    <Folder Include="CoreTask" />
+    <Folder Include="CoreTask\Functions" />
+    <Folder Include="TestScripts" />
+    <Folder Include="CoreTask\StoredProcedures" />
+    <Folder Include="CoreTask\StoredProcedures\Report" />
+    <Folder Include="CoreTask\StoredProcedures\Alerts" />
+    <Folder Include="CoreTask\StoredProcedures\Operations" />
+    <Folder Include="CoreTask\StoredProcedures_OLD" />
+    <Folder Include="CoreTask\StoredProcedures\Loads" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Data">
+      <SqlPermissionSet>EXTERNAL_ACCESS</SqlPermissionSet>
+    </Reference>
+    <Reference Include="System.Xml">
+      <SqlPermissionSet>EXTERNAL_ACCESS</SqlPermissionSet>
+    </Reference>
+    <Reference Include="System.Xml.Linq">
+      <SqlPermissionSet>EXTERNAL_ACCESS</SqlPermissionSet>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="CoreTask\Functions\fncExportaMultiHTML.cs" />
+    <Compile Include="CoreTask\Functions\fncLerArquivo.cs" />
+    <Compile Include="CoreTask\Functions\fncLerArquivoRetornaString.cs" />
+    <Compile Include="CoreTask\Functions\fncListarDiretorio.cs" />
+    <Compile Include="Core\ExecuteSql.cs" />
+    <Compile Include="Core\SendMessage.cs" />
+    <Compile Include="Core\stpServerJob.cs" />
+    <Compile Include="Core\stpMonitoring.cs" />
+    <Compile Include="Core\Guide.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Alerts\stpAlertaConexaoSQLServer.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Report\stpCheckJobDemorados.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Report\stpCheckFragmentacaoIndices.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Report\stpCheckConexaoAberta.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Report\stpCheckAlerta.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Report\stpCheckJobsRunning.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Report\stpCheckAlteracaoJobs.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Report\stpCheckJobsFailed.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Operations\stpWhoIsActive.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Report\stpCheckQueriesRunning.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Report\stpCheckBackupsExecutados.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Report\stpCheckDatabasesSemBackup.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Report\stpCheckList_Utilizacao_Arquivo.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Report\stpCheckTableGrowth.cs" />
+    <Compile Include="CoreTask\StoredProcedures_OLD\DBWhithOutAlwaysOn.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Report\stpCheckDatabaseGrowth.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Report\stpCheckList_Arquivos_MDF_LDF.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Report\stpCheckEspacoDisco.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Report\stpCheckWaitsStats.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Report\stpCheckSQLServerErrorLog.cs" />
+    <Compile Include="Core\stpServerLoads.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Report\stpCheckSQLTraceLogQueries.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Loads\stpCargaAlteracaoDB.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Loads\stpCargaFragmentacaoIndice.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Loads\stpCargaHistoricoUtilizacaoArquivo.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Loads\stpCargaHistoricoWaitsStats.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Loads\stpCargaTamanhosTabelas.cs" />
+    <Compile Include="Core\stpServerAlert.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Alerts\stpAlertaAlteracaoDB.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Report\stpEnviaCheckList.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Alerts\stpAlertaArquivoLogFull.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Alerts\stpAlertaCheckDB.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Alerts\stpAlertaConsumoCPU.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Alerts\stpAlertaDatabaseCriada.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Alerts\stpAlertaErroBancoDados.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Alerts\stpAlertaSQLServerReiniciado.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Alerts\stpAlertaProcessoBloqueado.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Alerts\stpAlertaQueriesDemoradas.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Alerts\stpAlertaCreateTrace.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Alerts\stpAlertaDatabaseSemBkp.cs" />
+    <Compile Include="Core\Core.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Alerts\stpAlertaJobFalha.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Alerts\stpAlertaEspacoDisco.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Alerts\stpAlertaTempdbUtilizacaoArquivoMDF.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Alerts\stpEnviaEmailProcessosExecucao.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Alerts\stpCheckDatabases.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Operations\stpDeleteFile.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Operations\stpCopyFile.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Operations\stpWriteFile.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Loads\stpCargaContadores.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Report\stpCheckContadores.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Operations\stpImportCSV.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Operations\stpMoveArquivo.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Operations\stpRenameFile.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Operations\stpExportaQueryArquivo.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Alerts\stpTesteTrace.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Loads\stpCargaHistoricoErrosDB.cs" />
+    <Compile Include="Core\stpMasterOperations.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Alerts\stpQueue.cs" />
+    <Compile Include="Core\stpGetInfo.cs" />
+    <Compile Include="CoreTask\StoredProcedures\01_Template.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Alerts\stpAlertaCheckFileBackup.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Alerts\stpAlertaAlwaysOn.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Loads\stpCargaLogAlwaysOn.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Operations\stpSendNotification.cs" />
+    <Compile Include="CoreTask\Functions\fncResolveHttpRequest.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Alerts\stpAlertaJobAgendamentoFalha.cs" />
+    <Compile Include="CoreTask\StoredProcedures\Alerts\stpAlertaFailoverAlwaysOn.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="InitSoftDB.pfx" />
+    <None Include="..\Bibliotecas\Initdb.pfx">
+      <Link>Initdb.pfx</Link>
+    </None>
+    <None Include="SafeBase.publish.xml" />
+  </ItemGroup>
+</Project>
