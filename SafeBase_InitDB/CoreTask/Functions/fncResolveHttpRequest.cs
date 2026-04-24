@@ -97,8 +97,8 @@ public partial class UserDefinedFunctions
         // Adicionar parâmetros não GET fornecidos
         if (requestMethod.ToUpper() != "GET" && !string.IsNullOrWhiteSpace(parameters))
         {
-            // Converter para matriz de bytes
-            var parameterData = Encoding.ASCII.GetBytes(parameters);
+            // Converter para matriz de bytes usando UTF-8 para manter JSON válido
+            var parameterData = Encoding.UTF8.GetBytes(parameters);
 
             // Definir informações de conteúdo
             if (!contentLengthSetFromHeaders)
@@ -165,7 +165,7 @@ public partial class UserDefinedFunctions
                 }
                 else
                 {
-                    using (var reader = new StreamReader(stream))
+                    using (var reader = new StreamReader(stream, Encoding.UTF8))
                     {
                         // Recuperar string de resposta
                         responseString = reader.ReadToEnd();
