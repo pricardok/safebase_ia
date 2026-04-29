@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Data;
 using System.Data.SqlClient;
 using System.Data.SqlTypes;
@@ -31,13 +31,472 @@ public partial class StoredProcedures
 
         Guia - Metodos de uso para Backup e Delete Backup:
         EXECUTE [dbo].[stpStartBackupDB]  'Help'    
-        EXECUTE [dbo].[stpStartDeleteOldBackups] 'Help'; 
+        EXECUTE [dbo].[stpStartBackupDB]  'Help'; 
+
+
+        Guia - Nova Stored Procedure com suporte a múltiplos arquivos:
+        EXECUTE [dbo].[stpStartBackupDBMultiFile] 'Help';
+        EXECUTE [dbo].[stpStartBackupDBMultiFile] 'BackupFull', 1, 4;
+        EXECUTE [dbo].[stpStartBackupDBMultiFile] 'BackupDifferential', 2, 4;
+        EXECUTE [dbo].[stpStartBackupDBMultiFile] 'BackupLog', 1, 2;
 
 
         Guia - Obtenha informações da Instância
         EXEC [dbo].[stpGetInfo] 'HELP';
 
         ");
+    }
+
+    [Microsoft.SqlServer.Server.SqlProcedure]
+    public static void stpStartBackupDB(string BackupType, int type = 1)
+    {
+        string OperationUID = Guid.NewGuid().ToString();
+        string TypeXML_JSON = "";
+        string JSON_Message = "";
+        string XMLMessage = "";
+        string Message = "Starting";
+        string scriptLine;
+        Exception ToThrow = null;
+
+        SendMessage.PostLogMSG(BackupType, OperationUID, Message, XMLMessage, false);
+
+        Message = "Finished.";
+
+        // get SQL Server Version
+        int Version = 0;
+        try
+        {
+            string ProductVersion = ExecuteSql.ExecuteQueryReadFast("", "SELECT SERVERPROPERTY('ProductVersion')");
+            ProductVersion = ProductVersion.Substring(0, ProductVersion.IndexOf('.'));
+            Version = Convert.ToInt32(ProductVersion);
+        }
+        catch (Exception e)
+        {
+            SendMessage.PostBack(e.ToString());
+        }
+        /**
+             * 9  - SQL Server 2005
+             * 10 - SQL Server 2008 R2
+             * 11 - SQL Server 2012
+             * 12 - SQL Server 2014
+             * 13 - SQL Server 2016
+             * 14 - SQL Server 2017 
+             * 14 - SQL Server 2019 
+        **/
+
+
+        /*
+          BackupFull, 
+          BackupDifferential, 
+          BackupLog
+        */
+
+        if (BackupType == "Help")
+        {
+            SendMessage.PostBack(@"
+
+            EXECUTE [dbo].[stpStartBackupDB]  'BackupFull' 
+            EXECUTE [dbo].[stpStartBackupDB]  'BackupDifferential' 
+            EXECUTE [dbo].[stpStartBackupDB]  'BackupLog'
+
+            OBS: O BackupFull pode ser realizado seguindo os parametros:
+
+                - EXECUTE [dbo].[stpStartBackupDB]  'BackupFull' ou EXECUTE [dbo].[stpStartBackupDB]  'BackupFull', 1 
+                NO comando acima, primeiro realiza Backup Full de todas as bases e apos deletar arquivos antigos com base nas configurações da tabela [dbo].[ConfigDB]
+
+                - EXECUTE [dbo].[stpStartBackupDB]  'BackupFull', 2
+                NO comando acima, a cada backup de base realizado o mesmo deleta os arquivos mais antigos, ou seja, ele nao faz todos os backups e depois deleta, a cada backup
+                o mesmo deleta a base mais antiga. Comando recomendado em ambientes com pouco espaço em disco de backups.
+
+                - EXECUTE [dbo].[stpStartBackupDB]  'BackupFull', 3
+                O comando acima deve ser utilizado em ultimo caso, onde o espaço em disco é critico, pois ele deleta o backup anterior para criar um novo, ou seja, 
+                enquanto o backup estives em andamento voce nao tera o arquivo antigo.
+
+                - EXECUTE [dbo].[stpStartBackupDB]  'BackupFull', 4; EXECUTE [dbo].[stpStartDeleteOldBackups]  'BackupFull' 
+                Ao utilizar o comando acima é necessario ulizar um complemento para que seja realizado o expurgo de backups antigos, note que um segundo EXECUTE é utilizado apos o 
+                ponto e virgula. Essa opção é valida para backups BackupFull, BackupDifferential e BackupLog
+                
+
+            Após o backup, seja ele full, diff ou de log os backups antigos serão deletados automaticamente desde que sejam utilizados as opções 1, 2 ou 3, com base nas configurações da tabela [dbo].[ConfigDB], 
+
+            Duvidas chame o DBA :D ");
+        }
+        else
+        {
+
+            try
+            {
+
+                if (Version >= 30) // (Version >= 13)
+                {
+                    TypeXML_JSON = "Get_Json";
+                    scriptLine = @"
+                          SELECT top 1
+                              JSON_VALUE(ParametersJson, '$." + BackupType + @".BackupPath') 
+	                            +CASE WHEN RIGHT((JSON_VALUE(ParametersJson, '$." + BackupType + @".BackupPath')), 1) = '\\' THEN '' ELSE '\\' END	+ @@ServerName + '\\' + 
+	                            +CASE WHEN RIGHT(@@ServerName, LEN(@@ServiceName)) = @@ServiceName THEN '' ELSE @@ServiceName + '\\' END 
+                              AS BackupPath,
+                              JSON_VALUE(ParametersJson, '$." + BackupType + @".ExcludeDB') AS [ExcludeDB],
+                              JSON_VALUE(ParametersJson, '$." + BackupType + @".WITH') AS [WITH],
+                              SERVERPROPERTY('ProductVersion') as ProductVersion 
+                          FROM [dbo].[ConfigDB]
+                          ";
+                }
+                else
+                {
+                    TypeXML_JSON = "Get_XML";
+                    scriptLine = @"
+                          SELECT TOP 1   
+	                          ParametersXML.value('(/Customer/" + BackupType + @"/BackupPath)[1]', 'varchar(max)')
+	                            +CASE WHEN RIGHT((ParametersXML.value('(/Customer/" + BackupType + @"/BackupPath)[1]', 'varchar(max)')), 1) = '\\' THEN '' ELSE '\\' END	+ @@ServerName + '\\' + 
+	                            +CASE WHEN RIGHT(@@ServerName, LEN(@@ServiceName)) = @@ServiceName THEN '' ELSE @@ServiceName + '\\' END AS BackupPath,
+                              ParametersXML.value('(/Customer/" + BackupType + @"/ExcludeDB)[1]', 'varchar(max)') as ExcludeDB,                         
+                              ParametersXML.value('(/Customer/" + BackupType + @"/WITH)[1]', 'varchar(max)') as [WITH],                                 
+                              SERVERPROPERTY('ProductVersion') as ProductVersion                                                                   
+                          FROM [dbo].[ConfigDB]
+                          ";
+                }
+
+                DataTable ConfigDB = ExecuteSql.Reader(OperationUID, scriptLine);
+
+                string BackupPath = ConfigDB.Rows[0][0].ToString();
+                string[] ExcludeDB = ConfigDB.Rows[0][1].ToString().Split(';');
+                string WITH = ConfigDB.Rows[0][2].ToString();
+                string[] ProductVersion = ConfigDB.Rows[0][3].ToString().Split('.');
+
+                if (Int32.Parse(ProductVersion[0]) >= 11)
+                    scriptLine = @"
+                            SELECT  RTRIM(name) as name, 
+                                    state_desc, 
+                                    recovery_model_desc, 
+                                    is_in_standby, 
+                                    isnull(db_name(source_database_id), '') as source_database, 
+                                    SERVERPROPERTY('IsHadrEnabled') as IsHadrEnabled, 
+                                    sys.fn_hadr_backup_is_preferred_replica(name) as prefered_replica 
+                            FROM sys.databases WHERE Name <> 'tempdb' 
+                              ";
+                else
+                    scriptLine = @"
+                            SELECT RTRIM(name) as name, 
+                                   state_desc, 
+                                   recovery_model_desc, 
+                                   is_in_standby, 
+                                   isnull(db_name(source_database_id),'') as source_database 
+                            FROM sys.databases WHERE Name <> 'tempdb' ";
+
+                DataTable Databases = ExecuteSql.Reader(OperationUID, scriptLine);
+
+                string DBIsHadrEnabled = "";
+                foreach (DataRow row in Databases.Rows)
+                {
+                    try
+                    {
+                        DBIsHadrEnabled = row["IsHadrEnabled"].ToString();
+                    }
+                    catch
+                    {
+
+                    }
+                }
+
+                DataTable AlwaysOnDBDetails = null;
+                if (DBIsHadrEnabled == "1")
+                {
+                    scriptLine = @"
+                            SELECT AGC.name, 
+                                RCS.replica_server_name, 
+                                ARS.is_local, 
+                                ARS.role_desc, 
+                                ADC.database_name                               
+                            FROM sys.availability_groups_cluster as AGC                                                                            
+                            JOIN sys.dm_hadr_availability_replica_cluster_states as RCS ON AGC.group_id = RCS.group_id                             
+                            JOIN sys.dm_hadr_availability_replica_states as ARS ON RCS.replica_id = ARS.replica_id and RCS.group_id = ARS.group_id 
+                            JOIN sys.availability_databases_cluster as ADC ON AGC.group_id = ADC.group_id                                          
+                            WHERE ARS.is_local = 1 
+                              ";
+
+                    AlwaysOnDBDetails = ExecuteSql.Reader(OperationUID, scriptLine);
+                }
+
+
+                foreach (DataRow row in Databases.Rows)
+                {
+
+                    WITH = ConfigDB.Rows[0][2].ToString();
+
+                    string DBName = row["name"].ToString();
+                    string DBStateDesc = row["state_desc"].ToString();
+                    string DBRecoveryModel = row["recovery_model_desc"].ToString();
+                    string DBis_in_standby = row["is_in_standby"].ToString();
+                    string DBsource_database = row["source_database"].ToString();
+
+                    //Is Prefered Replica?
+                    string DBprefered_replica = "True";
+                    try
+                    {
+                        //For SQL Server 2008, it will fail and set Yes
+                        DBprefered_replica = row["prefered_replica"].ToString();
+                    }
+                    catch { }
+
+                    string StartTime = DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss");
+                    string DBMessage = "";
+
+                    //FOR ALWAYSON PRIMARY OR SECONDARY
+                    string DBrole_desc = "PRIMARY";
+                    if (DBIsHadrEnabled == "1")
+                    {
+                        foreach (DataRow r in AlwaysOnDBDetails.Rows)
+                        {
+                            if (r["database_name"].ToString() == DBName)
+                                DBrole_desc = r["role_desc"].ToString();
+                        }
+                    }
+
+                    if (DBStateDesc == "OFFLINE") DBMessage = "DB is Offline"; 
+                    else if (DBStateDesc == "RESTORING") DBMessage = "DB is in Restoring";  
+                    else if (Array.IndexOf(ExcludeDB, DBName) >= 0) DBMessage = "Not Allowed in Config";  
+                    else if (DBis_in_standby == "1") DBMessage = "DB is in Warm StandBy";  
+                    else if (DBsource_database != "") DBMessage = "Snapshot of " + DBsource_database; 
+                    else if (DBprefered_replica.ToUpper() == "FALSE") DBMessage = "AlwaysOn not Prefered Replica"; 
+                    else if (BackupType == "BackupDifferential" && DBIsHadrEnabled == "1" && DBrole_desc == "SECONDARY") DBMessage = "BackupDiff not supported on Secondary";
+                    else if (BackupType == "BackupLog" && DBRecoveryModel == "SIMPLE") DBMessage = "Recovery Model is Simple";
+                    else if (BackupType == "BackupLog" && DBName.ToUpper() == "MASTER") DBMessage = "Master dosen't take log";
+
+                    else 
+                    {
+
+                        if (type == 1)
+                        {
+                            string FilePath = BackupPath + DBName;
+
+                            if (Directory.Exists(FilePath) == false)
+                                Directory.CreateDirectory(FilePath);
+
+                            if (BackupType == "BackupFull" && DBIsHadrEnabled == "1" && DBrole_desc == "SECONDARY")
+                            {
+                                if (WITH == "")
+                                    WITH = "WITH COPY_ONLY";
+                                else
+                                    WITH = WITH + ", COPY_ONLY";
+                            }
+
+                            string Time = StartTime.Replace("/", ".").Replace(":", ".").Replace(" ", "_");
+                            switch (BackupType)
+                            {
+                                case "BackupFull":
+                                    FilePath = FilePath + "\\" + DBName + "_FULL_" + Time + ".BAK";
+                                    scriptLine = "BACKUP DATABASE [" + DBName + "] TO DISK='" + FilePath + "' " + WITH + "; EXECUTE [dbo].[stpStartDeleteOldBackups] @BackupType = 'BackupFull';";
+                                    break;
+
+                                case "BackupDifferential":
+                                    FilePath = FilePath + "\\" + DBName + "_DIFF_" + Time + ".DIF";
+                                    scriptLine = "BACKUP DATABASE [" + DBName + "] TO DISK='" + FilePath + "' " + WITH + "; EXECUTE [dbo].[stpStartDeleteOldBackups] @BackupType = 'BackupDifferential';";
+                                    break;
+
+                                case "BackupLog":
+                                    FilePath = FilePath + "\\" + DBName + "_LOG_" + Time.Substring(0, 10) + ".TRN";
+                                    scriptLine = "BACKUP LOG [" + DBName + "] TO DISK='" + FilePath + "' " + WITH + "; EXECUTE [dbo].[stpStartDeleteOldBackups] @BackupType = 'BackupLog';";
+                                    break;
+                            }
+
+                            try
+                            {
+                                ExecuteSql.NonQuery(OperationUID, scriptLine, true, false, true);
+                                DBMessage = "Succeeded";
+                            }
+                            catch (Exception ex)
+                            {
+                                DBMessage = ReplaceChars(ex.Message.ToString());
+                                Message = "Failed";
+                                ToThrow = ex;
+                            }
+
+                        }
+
+                        if (type == 2)
+                        {
+                            string FilePath = BackupPath + DBName;
+
+                            if (Directory.Exists(FilePath) == false)
+                                Directory.CreateDirectory(FilePath);
+
+                            if (BackupType == "BackupFull" && DBIsHadrEnabled == "1" && DBrole_desc == "SECONDARY")
+                            {
+                                if (WITH == "")
+                                    WITH = "WITH COPY_ONLY";
+                                else
+                                    WITH = WITH + ", COPY_ONLY";
+                            }
+
+                            string Time = StartTime.Replace("/", ".").Replace(":", ".").Replace(" ", "_");
+                            switch (BackupType)
+                            {
+                                case "BackupFull":
+                                    FilePath = FilePath + "\\" + DBName + "_FULL_" + Time + ".BAK";
+                                    scriptLine = "BACKUP DATABASE [" + DBName + "] TO DISK='" + FilePath + "' " + WITH + "; EXECUTE [SafeBase].[dbo].[stpStartDeleteBackupsCustom]  'BackupFull', '" + DBName + "'; ";
+                                    break;
+
+                                case "BackupDifferential":
+                                    FilePath = FilePath + "\\" + DBName + "_DIFF_" + Time + ".DIF";
+                                    scriptLine = "BACKUP DATABASE [" + DBName + "] TO DISK='" + FilePath + "' " + WITH + "; EXECUTE [dbo].[stpStartDeleteOldBackups] @BackupType = 'BackupDifferential';";
+                                    break;
+
+                                case "BackupLog":
+                                    FilePath = FilePath + "\\" + DBName + "_LOG_" + Time.Substring(0, 10) + ".TRN";
+                                    scriptLine = "BACKUP LOG [" + DBName + "] TO DISK='" + FilePath + "' " + WITH + "; EXECUTE [dbo].[stpStartDeleteOldBackups] @BackupType = 'BackupLog';";
+                                    break;
+                            }
+
+                            try
+                            {
+                                ExecuteSql.NonQuery(OperationUID, scriptLine, true, false, true);
+                                DBMessage = "Succeeded";
+                            }
+                            catch (Exception ex)
+                            {
+                                DBMessage = ReplaceChars(ex.Message.ToString());
+                                Message = "Failed";
+                                ToThrow = ex;
+                            }
+
+                        }
+
+                        if (type == 3)
+                        {
+                            string FilePath = BackupPath + DBName;
+
+                            if (Directory.Exists(FilePath) == false)
+                                Directory.CreateDirectory(FilePath);
+
+                            if (BackupType == "BackupFull" && DBIsHadrEnabled == "1" && DBrole_desc == "SECONDARY")
+                            {
+                                if (WITH == "")
+                                    WITH = "WITH COPY_ONLY";
+                                else
+                                    WITH = WITH + ", COPY_ONLY";
+                            }
+
+                            string Time = StartTime.Replace("/", ".").Replace(":", ".").Replace(" ", "_");
+                            switch (BackupType)
+                            {
+                                case "BackupFull":
+                                    FilePath = FilePath + "\\" + DBName + "_FULL_" + Time + ".BAK";
+                                    scriptLine = "EXECUTE [SafeBase].[dbo].[stpStartDeleteBackupsCustom]  'BackupFull', '" + DBName + "'; BACKUP DATABASE [" + DBName + "] TO DISK='" + FilePath + "' " + WITH + "; ";
+                                    break;
+
+                                case "BackupDifferential":
+                                    FilePath = FilePath + "\\" + DBName + "_DIFF_" + Time + ".DIF";
+                                    scriptLine = "BACKUP DATABASE [" + DBName + "] TO DISK='" + FilePath + "' " + WITH + "; EXECUTE [dbo].[stpStartDeleteOldBackups] @BackupType = 'BackupDifferential';";
+                                    break;
+
+                                case "BackupLog":
+                                    FilePath = FilePath + "\\" + DBName + "_LOG_" + Time.Substring(0, 10) + ".TRN";
+                                    scriptLine = "BACKUP LOG [" + DBName + "] TO DISK='" + FilePath + "' " + WITH + "; EXECUTE [dbo].[stpStartDeleteOldBackups] @BackupType = 'BackupLog';";
+                                    break;
+                            }
+
+                            try
+                            {
+                                ExecuteSql.NonQuery(OperationUID, scriptLine, true, false, true);
+                                DBMessage = "Succeeded";
+                            }
+                            catch (Exception ex)
+                            {
+                                DBMessage = ReplaceChars(ex.Message.ToString());
+                                Message = "Failed";
+                                ToThrow = ex;
+                            }
+
+                        }
+
+                        if (type == 4)
+                        {
+                            string FilePath = BackupPath + DBName;
+
+                            if (Directory.Exists(FilePath) == false)
+                                Directory.CreateDirectory(FilePath);
+
+                            if (BackupType == "BackupFull" && DBIsHadrEnabled == "1" && DBrole_desc == "SECONDARY")
+                            {
+                                if (WITH == "")
+                                    WITH = "WITH COPY_ONLY";
+                                else
+                                    WITH = WITH + ", COPY_ONLY";
+                            }
+
+                            string Time = StartTime.Replace("/", ".").Replace(":", ".").Replace(" ", "_");
+                            switch (BackupType)
+                            {
+                                case "BackupFull":
+                                    FilePath = FilePath + "\\" + DBName + "_FULL_" + Time + ".BAK";
+                                    scriptLine = "BACKUP DATABASE [" + DBName + "] TO DISK='" + FilePath + "' " + WITH + ";";
+                                    break;
+
+                                case "BackupDifferential":
+                                    FilePath = FilePath + "\\" + DBName + "_DIFF_" + Time + ".DIF";
+                                    scriptLine = "BACKUP DATABASE [" + DBName + "] TO DISK='" + FilePath + "' " + WITH + ";";
+                                    break;
+
+                                case "BackupLog":
+                                    FilePath = FilePath + "\\" + DBName + "_LOG_" + Time.Substring(0, 10) + ".TRN";
+                                    scriptLine = "BACKUP LOG [" + DBName + "] TO DISK='" + FilePath + "' " + WITH + ";";
+                                    break;
+                            }
+
+                            try
+                            {
+                                ExecuteSql.NonQuery(OperationUID, scriptLine, true, false, true);
+                                DBMessage = "Succeeded";
+                            }
+                            catch (Exception ex)
+                            {
+                                DBMessage = ReplaceChars(ex.Message.ToString());
+                                Message = "Failed";
+                                ToThrow = ex;
+                            }
+
+                        }
+
+                    }
+
+                    string EndTime = DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss");
+
+                    JSON_Message = @"{
+                               ""Message"":{ 
+                               ""@MessageStatus"": " + DBMessage + @",
+                               ""@Database"": " + DBName + @",
+                               ""@TypeXML_JSON"": " + TypeXML_JSON + @",
+                               ""@DateTimeStarted"": " + StartTime + @",
+                               ""@DateTimeFinished"": " + EndTime + @"}}
+                               ";
+
+                    XMLMessage = XMLMessage +
+                                    "<Message Status='" + DBMessage + "' " +
+                                    "Database='" + DBName + "' " +
+                                    "TypeXML_JSON='" + TypeXML_JSON + "' " +
+                                    "DateTimeStarted='" + StartTime + "' " +
+                                    "DateTimeFinished='" + EndTime + "'" +
+                                    " /> ";
+
+                }
+            }
+            catch (Exception ex)
+            {
+                SendMessage.PostBack(ex.Message);
+
+                XMLMessage = "<ErrorMessage> " + ex.Message.ToString() + "</ErrorMessage>";
+                Message = "Failed";
+                ToThrow = ex;
+            }
+            finally
+            {
+                SendMessage.PostLogMSG(BackupType, OperationUID, Message, XMLMessage, true);
+
+                SendMessage.ThrowIfNeeded(ToThrow);
+            }
+
+        }
     }
 
     // NOVA STORED PROCEDURE COM SUPORTE A MÚLTIPLOS ARQUIVOS
@@ -384,459 +843,6 @@ public partial class StoredProcedures
                 SendMessage.PostLogMSG(BackupType + "_MultiFile", OperationUID, Message, XMLMessage, true);
                 SendMessage.ThrowIfNeeded(ToThrow);
             }
-        }
-    }
-
-    [Microsoft.SqlServer.Server.SqlProcedure]
-    public static void stpStartBackupDB(string BackupType, int type = 1)
-    {
-        string OperationUID = Guid.NewGuid().ToString();
-        string TypeXML_JSON = "";
-        string JSON_Message = "";
-        string XMLMessage = "";
-        string Message = "Starting";
-        string scriptLine;
-        Exception ToThrow = null;
-
-        SendMessage.PostLogMSG(BackupType, OperationUID, Message, XMLMessage, false);
-
-        Message = "Finished.";
-
-        // get SQL Server Version
-        int Version = 0;
-        try
-        {
-            string ProductVersion = ExecuteSql.ExecuteQueryReadFast("", "SELECT SERVERPROPERTY('ProductVersion')");
-            ProductVersion = ProductVersion.Substring(0, ProductVersion.IndexOf('.'));
-            Version = Convert.ToInt32(ProductVersion);
-        }
-        catch (Exception e)
-        {
-            SendMessage.PostBack(e.ToString());
-        }
-        /**
-             * 9  - SQL Server 2005
-             * 10 - SQL Server 2008 R2
-             * 11 - SQL Server 2012
-             * 12 - SQL Server 2014
-             * 13 - SQL Server 2016
-             * 14 - SQL Server 2017 
-             * 14 - SQL Server 2019 
-        **/
-
-
-        /*
-          BackupFull, 
-          BackupDifferential, 
-          BackupLog
-        */
-
-        if (BackupType == "Help")
-        {
-            SendMessage.PostBack(@"
-
-            EXECUTE [dbo].[stpStartBackupDB]  'BackupFull' 
-            EXECUTE [dbo].[stpStartBackupDB]  'BackupDifferential' 
-            EXECUTE [dbo].[stpStartBackupDB]  'BackupLog'
-
-            OBS: O BackupFull pode ser realizado seguindo os parametros:
-
-                - EXECUTE [dbo].[stpStartBackupDB]  'BackupFull' ou EXECUTE [dbo].[stpStartBackupDB]  'BackupFull', 1 
-                NO comando acima, primeiro realiza Backup Full de todas as bases e apos deletar arquivos antigos com base nas configurações da tabela [dbo].[ConfigDB]
-
-                - EXECUTE [dbo].[stpStartBackupDB]  'BackupFull', 2
-                NO comando acima, a cada backup de base realizado o mesmo deleta os arquivos mais antigos, ou seja, ele nao faz todos os backups e depois deleta, a cada backup
-                o mesmo deleta a base mais antiga. Comando recomendado em ambientes com pouco espaço em disco de backups.
-
-                - EXECUTE [dbo].[stpStartBackupDB]  'BackupFull', 3
-                O comando acima deve ser utilizado em ultimo caso, onde o espaço em disco é critico, pois ele deleta o backup anterior para criar um novo, ou seja, 
-                enquanto o backup estives em andamento voce nao tera o arquivo antigo.
-
-                - EXECUTE [dbo].[stpStartBackupDB]  'BackupFull', 4; EXECUTE [dbo].[stpStartDeleteOldBackups]  'BackupFull' 
-                Ao utilizar o comando acima é necessario ulizar um complemento para que seja realizado o expurgo de backups antigos, note que um segundo EXECUTE é utilizado apos o 
-                ponto e virgula. Essa opção é valida para backups BackupFull, BackupDifferential e BackupLog
-                
-
-            Após o backup, seja ele full, diff ou de log os backups antigos serão deletados automaticamente desde que sejam utilizados as opções 1, 2 ou 3, com base nas configurações da tabela [dbo].[ConfigDB], 
-
-            Duvidas chame o DBA :D ");
-        }
-        else
-        {
-
-            try
-            {
-
-                if (Version >= 30) // (Version >= 13)
-                {
-                    TypeXML_JSON = "Get_Json";
-                    scriptLine = @"
-                          SELECT top 1
-                              JSON_VALUE(ParametersJson, '$." + BackupType + @".BackupPath') 
-	                            +CASE WHEN RIGHT((JSON_VALUE(ParametersJson, '$." + BackupType + @".BackupPath')), 1) = '\\' THEN '' ELSE '\\' END	+ @@ServerName + '\\' + 
-	                            +CASE WHEN RIGHT(@@ServerName, LEN(@@ServiceName)) = @@ServiceName THEN '' ELSE @@ServiceName + '\\' END 
-                              AS BackupPath,
-                              JSON_VALUE(ParametersJson, '$." + BackupType + @".ExcludeDB') AS [ExcludeDB],
-                              JSON_VALUE(ParametersJson, '$." + BackupType + @".WITH') AS [WITH],
-                              SERVERPROPERTY('ProductVersion') as ProductVersion 
-                          FROM [dbo].[ConfigDB]
-                          ";
-                }
-                else
-                {
-                    TypeXML_JSON = "Get_XML";
-                    scriptLine = @"
-                          SELECT TOP 1   
-	                          ParametersXML.value('(/Customer/" + BackupType + @"/BackupPath)[1]', 'varchar(max)')
-	                            +CASE WHEN RIGHT((ParametersXML.value('(/Customer/" + BackupType + @"/BackupPath)[1]', 'varchar(max)')), 1) = '\\' THEN '' ELSE '\\' END	+ @@ServerName + '\\' + 
-	                            +CASE WHEN RIGHT(@@ServerName, LEN(@@ServiceName)) = @@ServiceName THEN '' ELSE @@ServiceName + '\\' END AS BackupPath,
-                              ParametersXML.value('(/Customer/" + BackupType + @"/ExcludeDB)[1]', 'varchar(max)') as ExcludeDB,                         
-                              ParametersXML.value('(/Customer/" + BackupType + @"/WITH)[1]', 'varchar(max)') as [WITH],                                 
-                              SERVERPROPERTY('ProductVersion') as ProductVersion                                                                   
-                          FROM [dbo].[ConfigDB]
-                          ";
-                }
-
-                DataTable ConfigDB = ExecuteSql.Reader(OperationUID, scriptLine);
-
-                string BackupPath = ConfigDB.Rows[0][0].ToString();
-                string[] ExcludeDB = ConfigDB.Rows[0][1].ToString().Split(';');
-                string WITH = ConfigDB.Rows[0][2].ToString();
-                string[] ProductVersion = ConfigDB.Rows[0][3].ToString().Split('.');
-
-                if (Int32.Parse(ProductVersion[0]) >= 11)
-                    scriptLine = @"
-                            SELECT  RTRIM(name) as name, 
-                                    state_desc, 
-                                    recovery_model_desc, 
-                                    is_in_standby, 
-                                    isnull(db_name(source_database_id), '') as source_database, 
-                                    SERVERPROPERTY('IsHadrEnabled') as IsHadrEnabled, 
-                                    sys.fn_hadr_backup_is_preferred_replica(name) as prefered_replica 
-                            FROM sys.databases WHERE Name <> 'tempdb' 
-                              ";
-                else
-                    scriptLine = @"
-                            SELECT RTRIM(name) as name, 
-                                   state_desc, 
-                                   recovery_model_desc, 
-                                   is_in_standby, 
-                                   isnull(db_name(source_database_id),'') as source_database 
-                            FROM sys.databases WHERE Name <> 'tempdb' ";
-
-                DataTable Databases = ExecuteSql.Reader(OperationUID, scriptLine);
-
-                string DBIsHadrEnabled = "";
-                foreach (DataRow row in Databases.Rows)
-                {
-                    try
-                    {
-                        DBIsHadrEnabled = row["IsHadrEnabled"].ToString();
-                    }
-                    catch
-                    {
-
-                    }
-                }
-
-                DataTable AlwaysOnDBDetails = null;
-                if (DBIsHadrEnabled == "1")
-                {
-                    scriptLine = @"
-                            SELECT AGC.name, 
-                                RCS.replica_server_name, 
-                                ARS.is_local, 
-                                ARS.role_desc, 
-                                ADC.database_name                               
-                            FROM sys.availability_groups_cluster as AGC                                                                            
-                            JOIN sys.dm_hadr_availability_replica_cluster_states as RCS ON AGC.group_id = RCS.group_id                             
-                            JOIN sys.dm_hadr_availability_replica_states as ARS ON RCS.replica_id = ARS.replica_id and RCS.group_id = ARS.group_id 
-                            JOIN sys.availability_databases_cluster as ADC ON AGC.group_id = ADC.group_id                                          
-                            WHERE ARS.is_local = 1 
-                              ";
-
-                    AlwaysOnDBDetails = ExecuteSql.Reader(OperationUID, scriptLine);
-
-                }
-
-
-                foreach (DataRow row in Databases.Rows)
-                {
-
-                    WITH = ConfigDB.Rows[0][2].ToString();
-
-                    string DBName = row["name"].ToString();
-                    string DBStateDesc = row["state_desc"].ToString();
-                    string DBRecoveryModel = row["recovery_model_desc"].ToString();
-                    string DBis_in_standby = row["is_in_standby"].ToString();
-                    string DBsource_database = row["source_database"].ToString();
-
-                    //Is Prefered Replica?
-                    string DBprefered_replica = "True";
-                    try
-                    {
-                        //For SQL Server 2008, it will fail and set Yes
-                        DBprefered_replica = row["prefered_replica"].ToString();
-                    }
-                    catch { }
-
-                    string StartTime = DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss");
-                    string DBMessage = "";
-
-                    //FOR ALWAYSON PRIMARY OR SECONDARY
-                    string DBrole_desc = "PRIMARY";
-                    if (DBIsHadrEnabled == "1")
-                    {
-                        foreach (DataRow r in AlwaysOnDBDetails.Rows)
-                        {
-                            if (r["database_name"].ToString() == DBName)
-                                DBrole_desc = r["role_desc"].ToString();
-                        }
-                    }
-
-                    if (DBStateDesc == "OFFLINE") DBMessage = "DB is Offline"; 
-                    else if (DBStateDesc == "RESTORING") DBMessage = "DB is in Restoring";  
-                    else if (Array.IndexOf(ExcludeDB, DBName) >= 0) DBMessage = "Not Allowed in Config";  
-                    else if (DBis_in_standby == "1") DBMessage = "DB is in Warm StandBy";  
-                    else if (DBsource_database != "") DBMessage = "Snapshot of " + DBsource_database; 
-                    else if (DBprefered_replica.ToUpper() == "FALSE") DBMessage = "AlwaysOn not Prefered Replica"; 
-                    else if (BackupType == "BackupDifferential" && DBIsHadrEnabled == "1" && DBrole_desc == "SECONDARY") DBMessage = "BackupDiff not supported on Secondary";
-                    else if (BackupType == "BackupLog" && DBRecoveryModel == "SIMPLE") DBMessage = "Recovery Model is Simple";
-                    else if (BackupType == "BackupLog" && DBName.ToUpper() == "MASTER") DBMessage = "Master dosen't take log";
-
-                    else 
-                    {
-
-                        if (type == 1)
-                        {
-                            string FilePath = BackupPath + DBName;
-
-                            if (Directory.Exists(FilePath) == false)
-                                Directory.CreateDirectory(FilePath);
-
-                            if (BackupType == "BackupFull" && DBIsHadrEnabled == "1" && DBrole_desc == "SECONDARY")
-                            {
-                                if (WITH == "")
-                                    WITH = "WITH COPY_ONLY";
-                                else
-                                    WITH = WITH + ", COPY_ONLY";
-                            }
-
-                            string Time = StartTime.Replace("/", ".").Replace(":", ".").Replace(" ", "_");
-                            switch (BackupType)
-                            {
-                                case "BackupFull":
-                                    FilePath = FilePath + "\\" + DBName + "_FULL_" + Time + ".BAK";
-                                    scriptLine = "BACKUP DATABASE [" + DBName + "] TO DISK='" + FilePath + "' " + WITH + "; EXECUTE [dbo].[stpStartDeleteOldBackups] @BackupType = 'BackupFull';";
-                                    break;
-
-                                case "BackupDifferential":
-                                    FilePath = FilePath + "\\" + DBName + "_DIFF_" + Time + ".DIF";
-                                    scriptLine = "BACKUP DATABASE [" + DBName + "] TO DISK='" + FilePath + "' " + WITH + "; EXECUTE [dbo].[stpStartDeleteOldBackups] @BackupType = 'BackupDifferential';";
-                                    break;
-
-                                case "BackupLog":
-                                    FilePath = FilePath + "\\" + DBName + "_LOG_" + Time.Substring(0, 10) + ".TRN";
-                                    scriptLine = "BACKUP LOG [" + DBName + "] TO DISK='" + FilePath + "' " + WITH + "; EXECUTE [dbo].[stpStartDeleteOldBackups] @BackupType = 'BackupLog';";
-                                    break;
-                            }
-
-                            try
-                            {
-                                ExecuteSql.NonQuery(OperationUID, scriptLine, true, false, true);
-                                DBMessage = "Succeeded";
-                            }
-                            catch (Exception ex)
-                            {
-                                DBMessage = ReplaceChars(ex.Message.ToString());
-                                Message = "Failed";
-                                ToThrow = ex;
-                            }
-
-                        }
-
-                        if (type == 2)
-                        {
-                            string FilePath = BackupPath + DBName;
-
-                            if (Directory.Exists(FilePath) == false)
-                                Directory.CreateDirectory(FilePath);
-
-                            if (BackupType == "BackupFull" && DBIsHadrEnabled == "1" && DBrole_desc == "SECONDARY")
-                            {
-                                if (WITH == "")
-                                    WITH = "WITH COPY_ONLY";
-                                else
-                                    WITH = WITH + ", COPY_ONLY";
-                            }
-
-                            string Time = StartTime.Replace("/", ".").Replace(":", ".").Replace(" ", "_");
-                            switch (BackupType)
-                            {
-                                case "BackupFull":
-                                    FilePath = FilePath + "\\" + DBName + "_FULL_" + Time + ".BAK";
-                                    scriptLine = "BACKUP DATABASE [" + DBName + "] TO DISK='" + FilePath + "' " + WITH + "; EXECUTE [SafeBase].[dbo].[stpStartDeleteBackupsCustom]  'BackupFull', '" + DBName + "'; ";
-                                    break;
-
-                                case "BackupDifferential":
-                                    FilePath = FilePath + "\\" + DBName + "_DIFF_" + Time + ".DIF";
-                                    scriptLine = "BACKUP DATABASE [" + DBName + "] TO DISK='" + FilePath + "' " + WITH + "; EXECUTE [dbo].[stpStartDeleteOldBackups] @BackupType = 'BackupDifferential';";
-                                    break;
-
-                                case "BackupLog":
-                                    FilePath = FilePath + "\\" + DBName + "_LOG_" + Time.Substring(0, 10) + ".TRN";
-                                    scriptLine = "BACKUP LOG [" + DBName + "] TO DISK='" + FilePath + "' " + WITH + "; EXECUTE [dbo].[stpStartDeleteOldBackups] @BackupType = 'BackupLog';";
-                                    break;
-                            }
-
-                            try
-                            {
-                                ExecuteSql.NonQuery(OperationUID, scriptLine, true, false, true);
-                                DBMessage = "Succeeded";
-                            }
-                            catch (Exception ex)
-                            {
-                                DBMessage = ReplaceChars(ex.Message.ToString());
-                                Message = "Failed";
-                                ToThrow = ex;
-                            }
-
-                        }
-
-                        if (type == 3)
-                        {
-                            string FilePath = BackupPath + DBName;
-
-                            if (Directory.Exists(FilePath) == false)
-                                Directory.CreateDirectory(FilePath);
-
-                            if (BackupType == "BackupFull" && DBIsHadrEnabled == "1" && DBrole_desc == "SECONDARY")
-                            {
-                                if (WITH == "")
-                                    WITH = "WITH COPY_ONLY";
-                                else
-                                    WITH = WITH + ", COPY_ONLY";
-                            }
-
-                            string Time = StartTime.Replace("/", ".").Replace(":", ".").Replace(" ", "_");
-                            switch (BackupType)
-                            {
-                                case "BackupFull":
-                                    FilePath = FilePath + "\\" + DBName + "_FULL_" + Time + ".BAK";
-                                    scriptLine = "EXECUTE [SafeBase].[dbo].[stpStartDeleteBackupsCustom]  'BackupFull', '" + DBName + "'; BACKUP DATABASE [" + DBName + "] TO DISK='" + FilePath + "' " + WITH + "; ";
-                                    break;
-
-                                case "BackupDifferential":
-                                    FilePath = FilePath + "\\" + DBName + "_DIFF_" + Time + ".DIF";
-                                    scriptLine = "BACKUP DATABASE [" + DBName + "] TO DISK='" + FilePath + "' " + WITH + "; EXECUTE [dbo].[stpStartDeleteOldBackups] @BackupType = 'BackupDifferential';";
-                                    break;
-
-                                case "BackupLog":
-                                    FilePath = FilePath + "\\" + DBName + "_LOG_" + Time.Substring(0, 10) + ".TRN";
-                                    scriptLine = "BACKUP LOG [" + DBName + "] TO DISK='" + FilePath + "' " + WITH + "; EXECUTE [dbo].[stpStartDeleteOldBackups] @BackupType = 'BackupLog';";
-                                    break;
-                            }
-
-                            try
-                            {
-                                ExecuteSql.NonQuery(OperationUID, scriptLine, true, false, true);
-                                DBMessage = "Succeeded";
-                            }
-                            catch (Exception ex)
-                            {
-                                DBMessage = ReplaceChars(ex.Message.ToString());
-                                Message = "Failed";
-                                ToThrow = ex;
-                            }
-
-                        }
-
-                        if (type == 4)
-                        {
-                            string FilePath = BackupPath + DBName;
-
-                            if (Directory.Exists(FilePath) == false)
-                                Directory.CreateDirectory(FilePath);
-
-                            if (BackupType == "BackupFull" && DBIsHadrEnabled == "1" && DBrole_desc == "SECONDARY")
-                            {
-                                if (WITH == "")
-                                    WITH = "WITH COPY_ONLY";
-                                else
-                                    WITH = WITH + ", COPY_ONLY";
-                            }
-
-                            string Time = StartTime.Replace("/", ".").Replace(":", ".").Replace(" ", "_");
-                            switch (BackupType)
-                            {
-                                case "BackupFull":
-                                    FilePath = FilePath + "\\" + DBName + "_FULL_" + Time + ".BAK";
-                                    scriptLine = "BACKUP DATABASE [" + DBName + "] TO DISK='" + FilePath + "' " + WITH + ";";
-                                    break;
-
-                                case "BackupDifferential":
-                                    FilePath = FilePath + "\\" + DBName + "_DIFF_" + Time + ".DIF";
-                                    scriptLine = "BACKUP DATABASE [" + DBName + "] TO DISK='" + FilePath + "' " + WITH + ";";
-                                    break;
-
-                                case "BackupLog":
-                                    FilePath = FilePath + "\\" + DBName + "_LOG_" + Time.Substring(0, 10) + ".TRN";
-                                    scriptLine = "BACKUP LOG [" + DBName + "] TO DISK='" + FilePath + "' " + WITH + ";";
-                                    break;
-                            }
-
-                            try
-                            {
-                                ExecuteSql.NonQuery(OperationUID, scriptLine, true, false, true);
-                                DBMessage = "Succeeded";
-                            }
-                            catch (Exception ex)
-                            {
-                                DBMessage = ReplaceChars(ex.Message.ToString());
-                                Message = "Failed";
-                                ToThrow = ex;
-                            }
-
-                        }
-
-                    }
-
-                    string EndTime = DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss");
-
-                    JSON_Message = @"{
-                               ""Message"":{ 
-                               ""@MessageStatus"": " + DBMessage + @",
-                               ""@Database"": " + DBName + @",
-                               ""@TypeXML_JSON"": " + TypeXML_JSON + @",
-                               ""@DateTimeStarted"": " + StartTime + @",
-                               ""@DateTimeFinished"": " + EndTime + @"}}
-                               ";
-
-                    XMLMessage = XMLMessage +
-                                    "<Message Status='" + DBMessage + "' " +
-                                    "Database='" + DBName + "' " +
-                                    "TypeXML_JSON='" + TypeXML_JSON + "' " +
-                                    "DateTimeStarted='" + StartTime + "' " +
-                                    "DateTimeFinished='" + EndTime + "'" +
-                                    " /> ";
-
-                }
-            }
-            catch (Exception ex)
-            {
-                SendMessage.PostBack(ex.Message);
-
-                XMLMessage = "<ErrorMessage> " + ex.Message.ToString() + "</ErrorMessage>";
-                Message = "Failed";
-                ToThrow = ex;
-            }
-            finally
-            {
-                SendMessage.PostLogMSG(BackupType, OperationUID, Message, XMLMessage, true);
-
-                SendMessage.ThrowIfNeeded(ToThrow);
-            }
-
         }
     }
 
@@ -1628,8 +1634,7 @@ public partial class StoredProcedures
 
             ToThrow = ex;
         }
-        finally
-        {
+        finally        {
             SendMessage.PostBack("---> iniciou");
             SendMessage.PostLogMSG("SendNotification", OperationUID, Message, XMLMessage, true);
             SendMessage.PostBack("---> terminou");
@@ -1827,7 +1832,7 @@ public partial class StoredProcedures
         {
             string SQLServerVersion = "11"; // >= MSSQL 2012
 
-            scriptLine = "DELETE FROM dbo.HistoricoDBCC WHERE MessageText NOT Like '%CHECKDB%' AND convert(varchar, TimeStamp,101) = convert(varchar, GETDATE(), 101)";
+            scriptLine = "DELETE FROM dbo.HistoricoDBCC WHERE MessageText Not Like '%CHECKDB%' AND convert(varchar, TimeStamp,101) = convert(varchar, GETDATE(), 101)";
 
             ExecuteSql.NonQuery(OperationUID, scriptLine, false, false, false);
 
@@ -2637,4 +2642,3 @@ public partial class StoredProcedures
     }
 
 }
-

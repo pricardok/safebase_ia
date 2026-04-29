@@ -83,7 +83,7 @@ SELECT safebase.dbo.fncResolveHttpRequest(
 );
 */
 
-DECLARE @url NVARCHAR(4000) = 'http://127.0.0.1:8000/ingest/agent-data';
+DECLARE @url NVARCHAR(4000) = 'http://192.168.11.215:8000/ingest/agent-data';
 DECLARE @apiKey NVARCHAR(200) = 'Hx7z9Q2wR4mP6tY8uVbN3cL1sZ0kF5hE';
 DECLARE @agentId NVARCHAR(200) = @@SERVERNAME;
 DECLARE @loginData NVARCHAR(MAX);
@@ -126,7 +126,7 @@ SELECT @loginData = (
     FOR JSON PATH
 );
 
-SELECT dbo.fncResolveHttpRequest(
+SELECT safebase.dbo.fncResolveHttpRequest(
     'POST',
     @url,
     N'{
