@@ -130,12 +130,24 @@ namespace InitDB.Client
                     @resource INT,
                     @maxfilesize BIGINT = 50,
                     @on BIT = 1, -- Habilitado
-                    @bigintfilter BIGINT = (1000000 * 7) -- 7 segundos
+                    @bigintfilter BIGINT = (1000000 * 7) -- 7 segundos,
+                    @TraceFilePath NVARCHAR(512) = @ca
+
+                IF RIGHT(@TraceFilePath, 4) <> '.trc'
+                    SET @TraceFilePath = @TraceFilePath + '.trc'
+
+                -- Garante que o arquivo de trace não existe antes de criar o novo
+                BEGIN TRY
+                    EXEC dbo.stpDeleteFile @TraceFilePath
+                END TRY
+                BEGIN CATCH
+                    -- Ignora se o arquivo não existir
+                END CATCH
 
                 -- Criação do trace
                 SET @Trace_Id = NULL
 
-                EXEC @resource = sys.sp_trace_create @Trace_Id OUTPUT, 0, @ca, @maxfilesize, NULL 
+                EXEC @resource = sys.sp_trace_create @Trace_Id OUTPUT, 0, @TraceFilePath, @maxfilesize, NULL 
 
                 IF (@resource = 0)
                 BEGIN

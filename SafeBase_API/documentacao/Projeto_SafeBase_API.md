@@ -184,6 +184,12 @@ A próxima etapa é fazer as instâncias SafeBase enviarem dados para esta API u
    - chama `fncResolveHttpRequest`
    - trata falhas e faz retry/log local
 
+### Envio em blocos
+- defina `MAX_INGESTION_BATCH_SIZE` no `.env` conforme o volume de dados
+- se o payload tiver muitos itens, envie em blocos menores e não em um JSON único
+- para `payload_data.logins` use chunking por `100`, `500` ou `1000` registros conforme o limite
+- `fncResolveHttpRequest` suporta enviar qualquer JSON, mas o backend já valida o tamanho de lote
+
 ### Observações
 
 - `fncResolveHttpRequest.cs` já suporta cabeçalhos customizados e corpo de requisição
