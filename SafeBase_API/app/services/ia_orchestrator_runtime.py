@@ -1,9 +1,11 @@
 import json
 import logging
+import time
 from typing import Any, Dict, Optional, Tuple
 
 import httpx
 
+from app.core.config import settings
 from app.db.models import ChaveIA, ProvedorIA
 from app.db.session import SessionLocal
 from app.services.crypto_manager import crypto_manager
@@ -63,6 +65,9 @@ class IAOrchestratorRuntime:
             provider_count = len(providers)
             start_index = self._provider_rr_index % provider_count
 
+            if settings.ia_debug_logs_enabled:
+                logger.info("IA debug: providers=%s start_index=%s", provider_count, start_index)
+
             for offset in range(provider_count):
                 provider_index = (start_index + offset) % provider_count
                 provider = providers[provider_index]
@@ -79,10 +84,28 @@ class IAOrchestratorRuntime:
                     logger.warning("Provedor %s sem chaves ativas.", provider.nome)
                     continue
 
+                if settings.ia_debug_logs_enabled:
+                    logger.info(
+                        "IA debug: tentando provedor=%s (%s) com %s chaves",
+                        provider.nome,
+                        provider.id,
+                        len(keys),
+                    )
+
                 response, key_id = self._try_provider_keys(provider, provider_name, keys, prompt)
                 if response:
                     self._provider_rr_index = (provider_index + 1) % provider_count
+                    if settings.ia_debug_logs_enabled:
+                        logger.info(
+                            "IA debug: sucesso provedor=%s key_id=%s next_provider_index=%s",
+                            provider.nome,
+                            key_id,
+                            self._provider_rr_index,
+                        )
                     return response, provider_name, key_id
+
+                if settings.ia_debug_logs_enabled:
+                    logger.info("IA debug: falha no provedor=%s, tentando proximo", provider.nome)
 
             return None, None, None
         finally:
@@ -108,6 +131,15 @@ class IAOrchestratorRuntime:
 
             try:
                 model_name = self._resolve_model_name(provider)
+                if settings.ia_debug_logs_enabled:
+                    logger.info(
+                        "IA debug: provedor=%s key_id=%s model=%s index=%s/%s",
+                        provider.nome,
+                        key.id,
+                        model_name,
+                        key_index,
+                        key_count - 1,
+                    )
                 response = self._call_provider(provider_name, api_key, prompt, model_name, provider)
                 self._key_rr_index[provider.id] = (key_index + 1) % key_count
                 return response, key.id
@@ -150,6 +182,7 @@ class IAOrchestratorRuntime:
         provider: ProvedorIA,
     ) -> str:
         config = self._load_provider_config(provider)
+        start_time = time.monotonic()
 
         if provider_name == "openai":
             endpoint = config.get("endpoint", "https://api.openai.com/v1/chat/completions")
@@ -160,7 +193,10 @@ class IAOrchestratorRuntime:
                 "max_tokens": 1024,
             }
             headers = {"Authorization": f"Bearer {api_key}"}
-            return self._post_chat_completion(endpoint, headers, payload)
+            result = self._post_chat_completion(endpoint, headers, payload)
+            if settings.ia_debug_logs_enabled:
+                logger.info("IA debug: openai ok in %.0fms", (time.monotonic() - start_time) * 1000)
+            return result
 
         if provider_name == "gemini":
             endpoint = config.get(
@@ -171,7 +207,10 @@ class IAOrchestratorRuntime:
                 "contents": [{"parts": [{"text": prompt}]}],
                 "generationConfig": {"temperature": 0.7, "maxOutputTokens": 1024},
             }
-            return self._post_gemini(endpoint, api_key, payload)
+            result = self._post_gemini(endpoint, api_key, payload)
+            if settings.ia_debug_logs_enabled:
+                logger.info("IA debug: gemini ok in %.0fms", (time.monotonic() - start_time) * 1000)
+            return result
 
         if provider_name == "mistral":
             endpoint = config.get("endpoint", "https://api.mistral.ai/v1/chat/completions")
@@ -182,7 +221,10 @@ class IAOrchestratorRuntime:
                 "max_tokens": 1024,
             }
             headers = {"Authorization": f"Bearer {api_key}"}
-            return self._post_chat_completion(endpoint, headers, payload)
+            result = self._post_chat_completion(endpoint, headers, payload)
+            if settings.ia_debug_logs_enabled:
+                logger.info("IA debug: mistral ok in %.0fms", (time.monotonic() - start_time) * 1000)
+            return result
 
         if provider_name == "azure_openai":
             endpoint = config.get("endpoint")
@@ -197,13 +239,18 @@ class IAOrchestratorRuntime:
                 "max_tokens": 1024,
             }
             headers = {"api-key": api_key}
-            return self._post_chat_completion(url, headers, payload)
+            result = self._post_chat_completion(url, headers, payload)
+            if settings.ia_debug_logs_enabled:
+                logger.info("IA debug: azure_openai ok in %.0fms", (time.monotonic() - start_time) * 1000)
+            return result
 
         raise ValueError(f"Provedor nao suportado: {provider_name}")
 
     def _post_chat_completion(self, url: str, headers: Dict[str, str], payload: Dict[str, Any]) -> str:
         with httpx.Client(timeout=30) as client:
             response = client.post(url, headers=headers, json=payload)
+            if settings.ia_debug_logs_enabled:
+                logger.info("IA debug: http status=%s url=%s", response.status_code, url)
             response.raise_for_status()
             data = response.json()
             return data["choices"][0]["message"]["content"].strip()
@@ -211,6 +258,8 @@ class IAOrchestratorRuntime:
     def _post_gemini(self, url: str, api_key: str, payload: Dict[str, Any]) -> str:
         with httpx.Client(timeout=30) as client:
             response = client.post(f"{url}?key={api_key}", json=payload)
+            if settings.ia_debug_logs_enabled:
+                logger.info("IA debug: http status=%s url=%s", response.status_code, url)
             response.raise_for_status()
             data = response.json()
             return data["candidates"][0]["content"]["parts"][0]["text"].strip()

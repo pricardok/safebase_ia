@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     normalization_enabled: bool = True
     normalization_interval_seconds: int = 60
     normalization_batch_size: int = 100
+    ia_debug_logs_enabled: bool = False
   
     class Config:
         env_file = ".env"
