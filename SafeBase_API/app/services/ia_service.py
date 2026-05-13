@@ -2,11 +2,16 @@ import json
 from datetime import datetime
 from typing import Any, Dict
 
+from app.services.ia_orchestrator_runtime import IAOrchestratorRuntime
+
 from app.db.session import SessionLocal
 from app.db.models import Agent, AgentPayload
 
 
 class IAService:
+    def __init__(self) -> None:
+        self._orchestrator = IAOrchestratorRuntime()
+
     def process_agent_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         db = SessionLocal()
         try:
@@ -44,10 +49,10 @@ class IAService:
             db.close()
 
     def query_insights(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        return {
-            "insight": "Esta é uma resposta de exemplo.",
-            "metadata": {
-                "agent_id": payload.get("agent_id"),
-                "query": payload.get("query"),
-            },
-        }
+        return self._orchestrator.generate_insight(
+            payload.get("query", ""),
+            payload.get("context", {}),
+        )
+
+    def generate_chat_reply(self, user_message: str, context: Dict[str, Any]) -> str:
+        return self._orchestrator.generate_reply(user_message, context)

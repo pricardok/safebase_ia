@@ -4,7 +4,9 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from app.routers import auth, health, agents, ia
+from app.routers import auth, health, agents, ia, chat
+from app.core.config import settings
+from app.services.normalization_service import NormalizationService
 from app.middleware.auth_middleware import AuthMiddleware
 from app.services.apikey_service import api_key_service
 from app.db.session import engine
@@ -34,6 +36,7 @@ app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(agents.router)
 app.include_router(ia.router)
+app.include_router(chat.router)
 
 
 @app.exception_handler(RequestValidationError)
@@ -57,6 +60,9 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 @app.on_event("startup")
 async def startup_event():
     Base.metadata.create_all(bind=engine)
+    if settings.normalization_enabled:
+        normalization_service = NormalizationService()
+        normalization_service.start()
 
 
 @app.get("/")

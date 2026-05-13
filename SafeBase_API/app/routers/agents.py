@@ -2,14 +2,16 @@ import json
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from app.core.dependencies import require_auth
+from app.core.dependencies import require_api_key, require_auth
 from app.schemas.agent import AgentPayload, AgentStatusResponse
 from app.services.ingestion_service import IngestionService
+from app.services.normalization_service import NormalizationService
 
 logger = logging.getLogger("safebase_api.agents")
 router = APIRouter()
 
 ingestion_service = IngestionService()
+normalization_service = NormalizationService()
 
 @router.post("/ingest/agent-data", response_model=AgentStatusResponse)
 async def ingest_agent_data(payload: AgentPayload, auth=Depends(require_auth)):
@@ -45,3 +47,9 @@ async def ingest_agent_data(payload: AgentPayload, auth=Depends(require_auth)):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to ingest data: {str(e)}"
         )
+
+
+@router.post("/normalize/run")
+async def run_normalization(auth=Depends(require_api_key)):
+    normalization_service.run_once()
+    return {"status": "ok", "message": "Normalization cycle executed"}

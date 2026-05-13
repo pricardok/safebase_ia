@@ -1,49 +1,37 @@
+python -m venv .venv
+
 python.exe -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 0.0.0.0 --port
 
 
- .\duckdb.exe
-DuckDB v1.5.2 (Variegata)
-Enter ".help" for usage hints.
-memory D SET memory_limit = '16GB';
-memory D SET threads = 8;
-memory D COPY (
-             SELECT * FROM read_csv(
-                 'M:\PROGRAMACAO\MSSQL 2022 e 2025 Developer\R\R.csv',
-                 header = true,
-                 ignore_errors = true,
-                 auto_detect = true,
-                 parallel = true,
-                 encoding = 'latin-1'
-             )
-         ) TO 'M:\PROGRAMACAO\MSSQL 2022 e 2025 Developer\rais_v2.parquet'
-         (FORMAT PARQUET, COMPRESSION ZSTD);
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 
+SELECT 
+    s.name AS [Esquema],
+    t.name AS [Tabela],
+    c.name AS [Coluna],
+    tp.name AS [Tipo_Dado],
+    CASE 
+        WHEN tp.name IN ('varchar', 'char', 'nvarchar', 'nchar', 'varbinary', 'binary') THEN 
+            CASE WHEN c.max_length = -1 THEN 'MAX' ELSE CAST(c.max_length AS VARCHAR(10)) END
+        WHEN tp.name IN ('numeric', 'decimal') THEN 
+            CAST(c.precision AS VARCHAR(5)) + ',' + CAST(c.scale AS VARCHAR(5))
+        ELSE NULL
+    END AS [Tamanho_Precisao],
+    CASE WHEN c.is_nullable = 1 THEN 'SIM' ELSE 'NÃO' END AS [Aceita_Nulo],
+    CASE WHEN c.is_identity = 1 THEN 'SIM' ELSE 'NÃO' END AS [Identidade]
+FROM 
+    sys.tables AS t
+INNER JOIN 
+    sys.schemas AS s ON t.schema_id = s.schema_id
+INNER JOIN 
+    sys.columns AS c ON t.object_id = c.object_id
+INNER JOIN 
+    sys.types AS tp ON c.user_type_id = tp.user_type_id
+ORDER BY 
+    [Esquema], 
+    [Tabela], 
+    c.column_id;
 
-CREATE TABLE dados AS SELECT * FROM 'M:\PROGRAMACAO\MSSQL 2022 e 2025 Developer\dados.parquet';
-SELECT COUNT(*) FROM dados;
-INSTALL mssql FROM community;
-LOAD mssql;
-ATTACH 'mssql://adm.paulo:039afaf1!!@FAC-DBHOMOL56.FACTA.COM.BR:1433?database=CONSULTA_RAIS' AS sqlserver (TYPE mssql);
-INSERT INTO sqlserver.dbo.stg_rais_trabalhadores_temp_vai SELECT * FROM dados;
-
-
-
--- 1. Conecta ao SQL Server
-INSTALL mssql FROM community;
-LOAD mssql;
-
-ATTACH 'mssql://adm.paulo:039afaf1!!@BANCOPROMOTORA.FACTADC.LOCAL:1433?database=CONSULTA_RAIS' AS sqlserver2 (TYPE mssql);
-
--- 2. Remove a tabela antiga se existir
-DROP TABLE IF EXISTS sqlserver.dbo.stg_rais_trabalhadores_temp_vai;
-
--- 3. Cria a tabela com os 92 milhões (agora sem erro de data!)
-CREATE TABLE sqlserver.dbo.stg_rais_trabalhadores_temp_vai AS
-SELECT * FROM 'dados_completo.parquet';
-
--- 4. Verifica se tudo foi importado
-SELECT COUNT(*) AS total_sqlserver 
-FROM sqlserver.dbo.stg_rais_trabalhadores_temp_vai;

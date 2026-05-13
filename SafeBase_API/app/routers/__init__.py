@@ -1,1 +1,1 @@
-from . import auth, health, agents, ia
+from . import auth, health, agents, ia, chat

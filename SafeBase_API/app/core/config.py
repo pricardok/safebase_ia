@@ -5,14 +5,18 @@ class Settings(BaseSettings):
     secret_key: str = "replace-this-secret-key"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
-    database_url: str = "mssql+pymssql://SafeBaseAPI_app:sfew133Awww@FPC-2571/SafeBaseAPI"
+    database_url: str = "mssql+pymssql://<usuario>:<senha>@<host>/<database>"
     api_key_header_name: str = "X-API-Key"
     api_key_prefix: str = "ApiKey"
-    default_api_key: str = "Hx7z9Q2wR4mP6tY8uVbN3cL1sZ0kF5hE"
+    default_api_key: str = ""
     max_ingestion_batch_size: int = 100
-
+    crypto_master_key: str = "default-master-key-for-dev"
+    normalization_enabled: bool = True
+    normalization_interval_seconds: int = 60
+    normalization_batch_size: int = 100
+  
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
-
+ 
 settings = Settings()

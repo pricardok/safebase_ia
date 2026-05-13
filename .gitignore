@@ -13,6 +13,7 @@
 Thumbs.db
 .DS_Store
 
+
 # Visual Studio build results
 **/bin/
 **/obj/
@@ -33,9 +34,24 @@ __pycache__/
 *.jfm
 *.publish.xml
 
+# Keep documentation SQL files tracked
+!SafeBase_API/documentacao/*.sql
+
+# Ignore documentation txt files
+SafeBase_API/documentacao/*.txt
+
+# Ignore archived documentation
+SafeBase_API/documentacao/_old/
+
+# Ignore specific documentation drafts
+SafeBase_API/documentacao/plano_orquestrador_ia.md
+SafeBase_API/documentacao/Projeto_SafeBase_API.md
+
+
 # Local environment files
 .env
 .env.*
+!SafeBase_API/.env.example
 
 # Packages folder
 packages/
