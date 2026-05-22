@@ -1,6 +1,7 @@
 import json
 import logging
 import time
+from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
 
 import httpx
@@ -76,7 +77,11 @@ class IAOrchestratorRuntime:
                 keys = (
                     db.query(ChaveIA)
                     .filter(ChaveIA.provedor_id == provider.id, ChaveIA.ativo == True)
-                    .order_by(ChaveIA.id.asc())
+                    .order_by(
+                        ChaveIA.prioridade.asc(),
+                        ChaveIA.falhas_consecutivas.asc(),
+                        ChaveIA.ultima_sucesso.desc(),
+                    )
                     .all()
                 )
 
@@ -92,7 +97,7 @@ class IAOrchestratorRuntime:
                         len(keys),
                     )
 
-                response, key_id = self._try_provider_keys(provider, provider_name, keys, prompt)
+                response, key_id = self._try_provider_keys(db, provider, provider_name, keys, prompt)
                 if response:
                     self._provider_rr_index = (provider_index + 1) % provider_count
                     if settings.ia_debug_logs_enabled:
@@ -102,6 +107,7 @@ class IAOrchestratorRuntime:
                             key_id,
                             self._provider_rr_index,
                         )
+                    db.commit()
                     return response, provider_name, key_id
 
                 if settings.ia_debug_logs_enabled:
@@ -113,6 +119,7 @@ class IAOrchestratorRuntime:
 
     def _try_provider_keys(
         self,
+        db,
         provider: ProvedorIA,
         provider_name: str,
         keys: list,
@@ -141,12 +148,15 @@ class IAOrchestratorRuntime:
                         key_count - 1,
                     )
                 response = self._call_provider(provider_name, api_key, prompt, model_name, provider)
+                self._record_key_success(db, key)
                 self._key_rr_index[provider.id] = (key_index + 1) % key_count
                 return response, key.id
             except Exception as exc:
                 logger.warning("Falha no provedor %s com chave %s: %s", provider.nome, key.id, exc)
+                self._record_key_failure(db, key)
                 continue
 
+        db.commit()
         return None, None
 
     def _resolve_api_key(self, key: ChaveIA) -> Optional[str]:
@@ -157,6 +167,31 @@ class IAOrchestratorRuntime:
         except Exception as exc:
             logger.warning("Falha ao descriptografar chave %s: %s", key.id, exc)
             return key.chave_criptografada
+
+    def _record_key_success(self, db, key: ChaveIA) -> None:
+        key.total_requisicoes += 1
+        key.falhas_consecutivas = 0
+        key.ultima_sucesso = datetime.utcnow()
+        db.add(key)
+        if settings.ia_debug_logs_enabled:
+            logger.info("IA debug: key_id=%s success recorded", key.id)
+
+    def _record_key_failure(self, db, key: ChaveIA) -> None:
+        key.total_requisicoes += 1
+        key.total_erros += 1
+        key.falhas_consecutivas += 1
+        key.ultima_falha = datetime.utcnow()
+        if key.falhas_consecutivas >= settings.ia_key_failure_threshold:
+            key.ativo = False
+            if settings.ia_debug_logs_enabled:
+                logger.info(
+                    "IA debug: key_id=%s disabled after %s failures",
+                    key.id,
+                    key.falhas_consecutivas,
+                )
+        db.add(key)
+        if settings.ia_debug_logs_enabled:
+            logger.info("IA debug: key_id=%s failure recorded", key.id)
 
     def _resolve_model_name(self, provider: ProvedorIA) -> str:
         config = self._load_provider_config(provider)

@@ -21,15 +21,28 @@ class AuthMiddleware(BaseHTTPMiddleware):
             token = authorization.split(" ", 1)[1]
             try:
                 payload = decode_access_token(token)
-                auth_state = {"type": "jwt", "payload": payload}
+                auth_state = {
+                    "type": "jwt",
+                    "payload": payload,
+                    "roles": payload.get("roles", []) if isinstance(payload, dict) else [],
+                    "permissions": payload.get("permissions", []) if isinstance(payload, dict) else [],
+                }
             except ValueError:
                 auth_state = {"type": "invalid"}
         elif api_key_header:
             record = self.api_key_service.validate_key(api_key_header)
             if record:
-                auth_state = {"type": "api_key", "record": record}
+                auth_state = {
+                    "type": "api_key",
+                    "record": record,
+                    "permissions": list(record.scopes or []),
+                }
             elif api_key_header == settings.default_api_key and settings.default_api_key:
-                auth_state = {"type": "api_key", "record": {"name": "default", "key": api_key_header, "scopes": ["default"], "is_active": True}}
+                auth_state = {
+                    "type": "api_key",
+                    "record": {"name": "default", "key": api_key_header, "scopes": ["default"], "is_active": True},
+                    "permissions": ["default"],
+                }
             else:
                 auth_state = {"type": "invalid"}
 

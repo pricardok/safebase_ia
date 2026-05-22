@@ -4,13 +4,14 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from app.routers import auth, health, agents, ia, chat
+from app.routers import auth, health, agents, ia, chat, rbac, users, admin, charts
 from app.core.config import settings
 from app.services.normalization_service import NormalizationService
 from app.middleware.auth_middleware import AuthMiddleware
 from app.services.apikey_service import api_key_service
-from app.db.session import engine
+from app.db.session import SessionLocal, engine
 from app.db.base import Base
+from app.services.rbac_service import seed_rbac
 
 logger = logging.getLogger("safebase_api")
 logging.basicConfig(level=logging.INFO)
@@ -37,6 +38,10 @@ app.include_router(auth.router)
 app.include_router(agents.router)
 app.include_router(ia.router)
 app.include_router(chat.router)
+app.include_router(rbac.router)
+app.include_router(users.router)
+app.include_router(admin.router)
+app.include_router(charts.router)
 
 
 @app.exception_handler(RequestValidationError)
@@ -60,6 +65,11 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 @app.on_event("startup")
 async def startup_event():
     Base.metadata.create_all(bind=engine)
+    db = SessionLocal()
+    try:
+        seed_rbac(db)
+    finally:
+        db.close()
     if settings.normalization_enabled:
         normalization_service = NormalizationService()
         normalization_service.start()

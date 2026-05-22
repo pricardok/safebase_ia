@@ -47,3 +47,13 @@ curl -X POST http://localhost:8000/chat/conversas/1/mensagens -H "Content-Type: 
 ```bash
 curl -X POST http://localhost:8000/normalize/run -H "X-API-Key: <SUA_API_KEY>"
 ```
+
+for /f "tokens=2 delims=:," %i in ('curl -s -X POST http://localhost:8000/auth/login -H "Content-Type: application/json" -d "{\"username\":\"paulo.kuhn\",\"password\":\"!@awssaaqq\"}"') do for /f "delims=" %j in ("%i") do curl -s -X GET http://localhost:8000/auth/me -H "Authorization: Bearer %j"
+
+# login
+curl -X POST http://localhost:8000/auth/login -H "Content-Type: application/json" -d "{\"username\":\"paulo.kuhn\",\"password\":\"!@awssaaqq\"}"
+
+# Auth
+curl -s -X GET http://localhost:8000/auth/me -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJwYXVsby5rdWhuIiwiZXhwIjoxNzc5MzkxMDkwLCJzY29wZSI6ImFjY2Vzc190b2tlbiIsInJvbGVzIjpbImFkbWluIl0sInBlcm1pc3Npb25zIjpbInJiYWMubWFuYWdlIiwicmJhYy5yZWFkIiwidXNlcnMubWFuYWdlIiwidXNlcnMucmVhZCJdfQ.rA5kpi7CoaNWjBCQ3nEB3Gk9lEuNLlEhN5Y9aTjfAgc"
+
+curl -X POST http://localhost:8000/chat/conversas/1/mensagens -H "Content-Type: application/json" -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJwYXVsby5rdWhuIiwiZXhwIjoxNzc5MzkxMDkwLCJzY29wZSI6ImFjY2Vzc190b2tlbiIsInJvbGVzIjpbImFkbWluIl0sInBlcm1pc3Npb25zIjpbInJiYWMubWFuYWdlIiwicmJhYy5yZWFkIiwidXNlcnMubWFuYWdlIiwidXNlcnMucmVhZCJdfQ.rA5kpi7CoaNWjBCQ3nEB3Gk9lEuNLlEhN5Y9aTjfAgc"" -d "{\"conteudo\":\"Analise o ambiente\"}"

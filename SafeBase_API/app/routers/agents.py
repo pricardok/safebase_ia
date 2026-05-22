@@ -8,7 +8,7 @@ from app.services.ingestion_service import IngestionService
 from app.services.normalization_service import NormalizationService
 
 logger = logging.getLogger("safebase_api.agents")
-router = APIRouter()
+router = APIRouter(tags=["Agents"])
 
 ingestion_service = IngestionService()
 normalization_service = NormalizationService()

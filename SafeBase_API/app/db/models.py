@@ -1,4 +1,5 @@
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy.orm import relationship
 from datetime import datetime
 
 from app.db.base import Base
@@ -15,6 +16,8 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    roles = relationship("UserRole", back_populates="user", cascade="all, delete-orphan")
+
 
 class ApiKey(Base):
     __tablename__ = "api_keys"
@@ -25,6 +28,56 @@ class ApiKey(Base):
     scopes = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Role(Base):
+    __tablename__ = "roles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(128), unique=True, nullable=False, index=True)
+    description = Column(String(512), nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    users = relationship("UserRole", back_populates="role", cascade="all, delete-orphan")
+    permissions = relationship("RolePermission", back_populates="role", cascade="all, delete-orphan")
+
+
+class Permission(Base):
+    __tablename__ = "permissions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(128), unique=True, nullable=False, index=True)
+    description = Column(String(512), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    roles = relationship("RolePermission", back_populates="permission", cascade="all, delete-orphan")
+
+
+class UserRole(Base):
+    __tablename__ = "user_roles"
+    __table_args__ = (UniqueConstraint("user_id", "role_id", name="uq_user_roles"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    role_id = Column(Integer, ForeignKey("roles.id"), nullable=False)
+    assigned_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="roles")
+    role = relationship("Role", back_populates="users")
+
+
+class RolePermission(Base):
+    __tablename__ = "role_permissions"
+    __table_args__ = (UniqueConstraint("role_id", "permission_id", name="uq_role_permissions"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    role_id = Column(Integer, ForeignKey("roles.id"), nullable=False)
+    permission_id = Column(Integer, ForeignKey("permissions.id"), nullable=False)
+    granted_at = Column(DateTime, default=datetime.utcnow)
+
+    role = relationship("Role", back_populates="permissions")
+    permission = relationship("Permission", back_populates="roles")
 
 
 class Agent(Base):
@@ -186,7 +239,13 @@ class ChaveIA(Base):
     hash_chave = Column(String(512), nullable=True)
     chave_criptografada = Column(Text, nullable=True)
     descricao = Column(String(512), nullable=True)
+    prioridade = Column(Integer, default=1, nullable=False)
     ativo = Column(Boolean, default=True)
+    falhas_consecutivas = Column(Integer, default=0, nullable=False)
+    total_requisicoes = Column(Integer, default=0, nullable=False)
+    total_erros = Column(Integer, default=0, nullable=False)
+    ultima_sucesso = Column(DateTime, nullable=True)
+    ultima_falha = Column(DateTime, nullable=True)
     metadados = Column(Text, nullable=True)
     criado_em = Column(DateTime, default=datetime.utcnow)
     atualizado_em = Column(DateTime, nullable=True)
@@ -198,6 +257,10 @@ class ChatConversation(Base):
     id = Column(Integer, primary_key=True, index=True)
     titulo = Column(String(256), nullable=True)
     usuario_id = Column(String(128), index=True, nullable=False)
+    categoria_id = Column(Integer, ForeignKey("chat_categorias.id"), nullable=True)
+    pinned = Column(Boolean, default=False)
+    temperature = Column(Numeric(4, 2), default=0.7)
+    max_tokens = Column(Integer, default=2000)
     criado_em = Column(DateTime, default=datetime.utcnow)
     atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -223,6 +286,86 @@ class ChatContext(Base):
     criado_em = Column(DateTime, default=datetime.utcnow)
 
 
+class ChatCategoria(Base):
+    __tablename__ = "chat_categorias"
+
+    id = Column(Integer, primary_key=True, index=True)
+    codigo = Column(String(128), unique=True, nullable=False, index=True)
+    nome = Column(String(256), nullable=False)
+    descricao = Column(String(512), nullable=True)
+    ativo = Column(Boolean, default=True)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+
+
+class UserCategoria(Base):
+    __tablename__ = "user_categorias"
+    __table_args__ = (UniqueConstraint("user_id", "categoria_id", name="uq_user_categorias"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    categoria_id = Column(Integer, ForeignKey("chat_categorias.id"), nullable=False)
+    assigned_at = Column(DateTime, default=datetime.utcnow)
+
+
+class UserSettings(Base):
+    __tablename__ = "user_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
+    default_categoria_codigo = Column(String(128), nullable=True)
+    default_mode = Column(String(32), nullable=True)
+    default_temperature = Column(Numeric(4, 2), nullable=True)
+    default_max_tokens = Column(Integer, nullable=True)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ChartShare(Base):
+    __tablename__ = "chart_shares"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    categoria_id = Column(Integer, ForeignKey("chat_categorias.id"), nullable=True)
+    titulo = Column(String(256), nullable=True)
+    chart_payload = Column(Text, nullable=False)
+    share_token = Column(String(128), unique=True, nullable=False, index=True)
+    expires_at = Column(DateTime, nullable=True)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+
+
+class ChartFavorite(Base):
+    __tablename__ = "chart_favorites"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    categoria_id = Column(Integer, ForeignKey("chat_categorias.id"), nullable=True)
+    titulo = Column(String(256), nullable=True)
+    chart_payload = Column(Text, nullable=False)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+
+
+class ChartFavoriteShare(Base):
+    __tablename__ = "chart_favorite_shares"
+
+    id = Column(Integer, primary_key=True, index=True)
+    favorite_id = Column(Integer, ForeignKey("chart_favorites.id"), nullable=False)
+    share_token = Column(String(128), unique=True, nullable=False, index=True)
+    expires_at = Column(DateTime, nullable=True)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+
+
+class ExternalDataSource(Base):
+    __tablename__ = "external_data_sources"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nome = Column(String(128), nullable=False)
+    tipo = Column(String(64), nullable=False)
+    configuracao = Column(Text, nullable=True)
+    ativo = Column(Boolean, default=True)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class KnowledgeMd(Base):
     __tablename__ = "conhecimento_md"
 
@@ -233,3 +376,14 @@ class KnowledgeMd(Base):
     origem = Column(String(32), nullable=False, default="manual")
     criado_em = Column(DateTime, default=datetime.utcnow)
     atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class RefreshToken(Base):
+    __tablename__ = "auth_refresh_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    token_hash = Column(String(128), unique=True, nullable=False, index=True)
+    expires_at = Column(DateTime, nullable=False)
+    revoked_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)

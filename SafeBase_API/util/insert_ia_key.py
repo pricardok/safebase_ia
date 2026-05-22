@@ -20,6 +20,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--provider-id", type=int, help="Provider id")
     parser.add_argument("--api-key", required=True, help="Raw API key to encrypt")
     parser.add_argument("--descricao", default="chave principal", help="Description for the key")
+    parser.add_argument("--prioridade", type=int, default=1, help="Prioridade da chave (menor=mais alta)")
     parser.add_argument("--ativa", action="store_true", help="Mark key as active")
     parser.add_argument("--metadados", default="{}", help="JSON metadata string")
     parser.add_argument(
@@ -76,6 +77,7 @@ def main() -> int:
             hash_chave=hash_chave,
             chave_criptografada=encrypted_key,
             descricao=args.descricao,
+            prioridade=args.prioridade,
             ativo=True if args.ativa else True,
             metadados=json.dumps(metadata, ensure_ascii=False),
         )

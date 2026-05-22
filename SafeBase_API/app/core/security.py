@@ -1,6 +1,7 @@
+import hashlib
 import secrets
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Iterable, Optional
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -18,12 +19,19 @@ def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
 
-def create_access_token(subject: str, expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(
+    subject: str,
+    expires_delta: Optional[timedelta] = None,
+    roles: Optional[Iterable[str]] = None,
+    permissions: Optional[Iterable[str]] = None,
+) -> str:
     expire = datetime.utcnow() + (expires_delta or timedelta(minutes=settings.access_token_expire_minutes))
     payload = {
         "sub": subject,
         "exp": expire,
         "scope": "access_token",
+        "roles": sorted(set(roles or [])),
+        "permissions": sorted(set(permissions or [])),
     }
     return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
 
@@ -38,3 +46,11 @@ def decode_access_token(token: str) -> dict:
 
 def generate_api_key() -> str:
     return secrets.token_urlsafe(32)
+
+
+def generate_refresh_token() -> str:
+    return secrets.token_urlsafe(48)
+
+
+def hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()

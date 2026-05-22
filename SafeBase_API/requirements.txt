@@ -10,3 +10,4 @@ sqlalchemy
 pydantic-settings
 httpx
 cryptography
+pydantic[email]
