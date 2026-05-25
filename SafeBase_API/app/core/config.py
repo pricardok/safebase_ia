@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     normalization_batch_size: int = 100
     ia_key_failure_threshold: int = 3
     ia_debug_logs_enabled: bool = False
+    knowledge_md_enabled: bool = True
+    knowledge_md_max_items: int = 5
+    knowledge_md_max_chars: int = 1500
 
     class Config:
         env_file = ".env"

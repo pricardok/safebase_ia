@@ -1,33 +1,35 @@
-# Arquitetura do projeto SafeBase AI
+# Arquitetura do projeto SafeBase AI (Atualizada)
 
 ## Objetivo
 
-Criar um sistema distribuído para análise inteligente dos dados coletados pelo SafeBase. O sistema deverá suportar múltiplas instâncias do SafeBase/serviço local e consolidar essas coletas em uma API central, onde os dados serão salvos e posteriormente analisados por um módulo de IA. Uma interface web permitirá interação tipo chat e dashboards.
+Criar um sistema distribuído para análise inteligente dos dados coletados pelo SafeBase, com autenticação forte, controle por categorias e interface web no estilo chat/DeepSeek. O sistema suporta múltiplas instâncias SafeBase e consolida dados em uma API central, permitindo análises por IA e dashboards.
+
+---
 
 ## Visão geral do projeto
 
-O projeto será composto por 4 componentes principais:
+O projeto possui 4 componentes principais:
 
 1. **Agent Service (Windows Service)**
    - instalado localmente em cada instância SafeBase
    - coleta dados de tabelas locais do SafeBase
    - envia pacotes para a API central
 
-2. **API central (FastAPI)**
+2. **API Central (FastAPI)**
    - recebe dados dos agentes
-   - valida e salva no banco de dados central
-   - expõe endpoints para leitura e análise
-   - centraliza as chaves de IA e os metadados do provedor
+   - valida e salva no banco central
+   - expõe endpoints para leitura, chat, gráficos e IA
+   - controla RBAC, categorias e permissões
 
-3. **API central + IA**
-   - recebe dados dos agentes
-   - valida, salva e consolida no banco de dados central
-   - executa o módulo de IA para gerar análises e insights
-   - expõe endpoints para leitura, dashboards e o frontend web
+3. **IA Orquestrador (Python)**
+   - gera análises com base nos dados armazenados no banco
+   - suporta modos: rápido, especialista, gráfico (visão futuro)
 
-4. **Web application (Chat/Dashboard)**
-   - UI interativa para perguntas e visualização de insights
-   - consulta exclusivamente a API para dados e resultados da IA
+4. **Web Application (Chat/Dashboard)**
+   - UI interativa estilo DeepSeek
+   - usa JWT e categorias liberadas para acesso
+
+---
 
 ## Diagrama de fluxo
 
@@ -40,363 +42,75 @@ flowchart TD
     B -->|Autentica/Valida| A
 ```
 
-## Decisão de arquitetura
-
-### Linguagem e tecnologias
-
-- **Agent Service**: C# / .NET 6+ (Windows Service)
-- **API Central**: Python + FastAPI
-- **IA Orquestrador**: Python
-- **Web**: React + Vite (ou outra framework SPA)
-- **Banco de dados central**: PostgreSQL, SQL Server ou outro relacional
-
-### Por que FastAPI para API
-
-- ótimo desempenho para APIs REST
-- fácil integração com Python
-- documentação automática OpenAPI
-- middleware simples para autenticação, CORS, logging
-
-## Estrutura de pastas proposta
-
-```
-SafeBase_API/
-  backend-api/
-    app/
-      main.py
-      routers/
-      models/
-      schemas/
-      services/
-      db/
-      utils/
-      ia-orchestrator/
-        prompts/
-        services/
-        models/
-        config/
-    config/
-    scripts/
-    Dockerfile
-    requirements.txt
-
-  agent-service/
-    SafeBase_AgentService.csproj
-    src/
-      Program.cs
-      Worker.cs
-      Collectors/
-      HTTP/
-      Models/
-      Config/
-    README.md
-
-  installer/
-    SafeBase_Installer.csproj
-    src/
-      Program.cs
-      frmSafeBaseInstaller.cs
-      frmSafeBaseInstaller.Designer.cs
-      Core/
-      Properties/
-    README.md
-
-  web/
-    src/
-      App.tsx
-      pages/
-      components/
-      services/
-    public/
-    package.json
-    vite.config.ts
-
-  docs/
-    architecture.md
-    data-flow.md
-    security.md
-```
-
-## Escopo de instalação vs serviço
-
-O instalador `SafeBase_Installer` deve ser responsável apenas por instalar e configurar o ambiente local do SafeBase e do agente de coleta. Ele não é o serviço de coleta em si.
-
-O serviço Windows de coleta deve ser um projeto independente, por exemplo `SafeBase_AgentService`, com ciclo de vida próprio. Essa separação garante que:
-- o instalador possa criar banco, objetos SQL e jobs sem misturar lógica de coleta;
-- o serviço tenha seu próprio deploy, atualização e teste isolado;
-- mudanças na URL da API, token ou credenciais SQL possam ser ajustadas sem recompilar o instalador.
-
-O instalador deve oferecer:
-- configuração de conexão SQL Server com autenticação Windows ou SQL;
-- validação de login na instância usando o usuário fornecido;
-- campos para URL da API central e token;
-- opção de reabrir a interface de configuração no futuro para alterar:
-  - usuário/senha SQL;
-  - modo de autenticação Windows/SQL;
-  - URL da API;
-  - token da API.
-
-## Componentes detalhados
-
-### 1. Agent Service (Windows Service)
-
-Responsabilidades:
-- conectar ao banco local SafeBase
-- coletar dados das tabelas definidas em `SafeBase_Installer/Core`
-- gerar pacotes JSON e enviar à API central
-- tratar falhas de rede/retries
-- rodar como serviço do Windows
-- ler sua configuração local de conexão SQL e API (URL + token)
-
-Importante: o serviço Windows deve ser um projeto separado de `SafeBase_Installer`. O instalador apenas instala/configura o serviço e salva os parâmetros necessários para a execução em tempo de runtime.
-
-Dados coletados iniciais:
-- jobs executados / falhados
-- waits e métricas de desempenho
-- queries lentas/historico de execução
-- alertas e log de erros
-- estados de sessões e bloqueios
-- permissões e mudanças relevantes
-- etc...
-
-Implementação sugerida:
-- usar `Worker Service` do .NET
-- configurar conexão via arquivo `appsettings.json` ou JSON seguro local
-- endpoint de envio: `POST /ingest/agent-data`
-- suportar autenticação Windows e SQL Server, conforme configurado pelo instalador
-- manter opção de reload/reconfiguração sem reinstalação completa do serviço
-
-### 2. API Central (FastAPI)
-
-Responsabilidades:
-- receber dados dos agentes
-- autenticar cada agente (token, cert, API key)
-- armazenar dados em uma estrutura centralizada
-- fornecer endpoints para leitura, dashboards e IA
-- gerenciar metadados de provedor e chaves de IA
-
-Endpoints principais:
-- `POST /ingest/agent-data`
-- `GET /agents/{agent_id}/status`
-- `GET /analytics/recent`
-- `GET /reports/insights`
-- `GET /ia/config`
-
-### 3. API Central + IA
-
-Responsabilidades:
-- receber dados dos agentes
-- armazenar e consolidar dados no banco central
-- executar o módulo de IA para gerar análises e insights
-- expor endpoints REST para dados, relatórios e chat
-- orquestrar prompts e processar respostas da IA
-
-Ações possíveis:
-- gerar diagnóstico de performance
-- sugerir root causes
-- comparar métricas entre instâncias
-- classificar alertas por severidade
-
-## Observação: para o MVP, recomendamos manter o módulo de IA dentro do mesmo backend FastAPI, simplificando deploy e comunicação. Se precisar, o IA Orquestrador pode ser extraído para serviço próprio no futuro.
-
-### 4. Web / Chat / Dashboard
-
-Responsabilidades:
-- permitir consulta do usuário
-- mostrar histórico de análises
-- exibir dashboards e cards de KPIs
-- prover chat interativo com IA
-
-Funcionalidades iniciais:
-- chat com IA: perguntas sobre índices, waits, jobs, falhas
-- painel de instâncias/agents
-- visualização de alertas e métricas consolidadas
-- pesquisa por problema ou período
-
-## Modelo de dados central
-
-### Tabelas principais sugeridas
-
-#### agentes
-- `id`
-- `nome_host`
-- `nome_instancia`
-- `versao`
-- `ultimo_heartbeat`
-- `status`
-- `metadados`
-
-#### payloads_agente
-- `id`
-- `agente_id`
-- `tipo_payload`
-- `dados_payload` (JSON)
-- `coletado_em`
-- `recebido_em`
-
-#### dados_jobs_safe
-- `id`
-- `payload_agente_id`
-- `nome_job`
-- `status`
-- `iniciado_em`
-- `finalizado_em`
-- `duracao_ms`
-- `mensagem_erro`
-
-#### dados_esperas_safe
-- `id`
-- `payload_agente_id`
-- `tipo_espera`
-- `tempo_espera_ms`
-- `tempo_recurso_ms`
-- `tempo_sinal_ms`
-- `contagem_tarefas`
-
-#### alertas_safe
-- `id`
-- `payload_agente_id`
-- `tipo_alerta`
-- `gravidade`
-- `mensagem`
-- `criado_em`
-
-#### provedores_ia
-- `id`
-- `nome`
-- `descricao`
-- `prioridade`
-- `configuracao`
-- `ativo`
-
-#### chaves_ia
-- `id`
-- `provedor_id`
-- `hash_chave`
-- `chave_criptografada`
-- `descricao`
-- `ativo`
-- `metadados`
-- `criado_em`
-- `atualizado_em`
-
-#### insights_ia
-- `id`
-- `fonte_dados`
-- `tipo_insight`
-- `resumo`
-- `detalhes`
-- `confianca`
-- `gerado_em`
-- `objetos_relacionados`
-
-## Segurança e chave IA
-
-### Chave IA no banco central
-
-Sim, é possível armazenar a chave no banco central, mas ela deve ser:
-- **criptografada em repouso**
-- **descriptografada apenas em memória**
-- acionada somente pelo serviço de backend autorizado
-
-### Como proteger a chave
-
-#### Opção 1: Criptografia simétrica com chave mestra externa
-- armazenar `encrypted_key` no banco
-- manter `master_key` fora do banco, em arquivo local protegido, variável de ambiente ou vault
-- o backend descriptografa somente ao iniciar ou ao usar
-
-#### Opção 2: Usar um serviço de secrets/Key Vault
-- backend busca chave real de um vault
-- no banco, guarda apenas metadata e hash
-- a chave central é então segura mesmo se o DB for comprometido
-
-#### Recomendações práticas
-- `encrypted_key` deve usar AES-GCM ou AES-CBC com IV
-- a `master_key` NÃO deve estar no repositório
-- rotacione chaves periodicamente
-- use `key_hash` para validação sem expor segredo
-
-### Fluxo recomendado de chave
-
-1. agente envia dados para API
-2. API central persiste dados no banco
-3. módulo IA obtém `encrypted_key` do banco
-4. IA descriptografa a chave usando `master_key` local ou vault
-5. IA faz chamada ao provedor
-6. resultado é processado e armazenado
-
-## Segurança das comunicações
-
-### Service → API
-- usar HTTPS
-- autenticação mútua ou token de agente
-- limitar origem / IP se aplicável
-
-### Web → API
-- usar HTTPS
-- autenticação de usuário / sessão
-- role-based access se necessário
-
-## Fluxo de dados completo
-
-1. Serviço Windows coleta dados do SafeBase local
-2. Serviço forma payload JSON
-3. Serviço envia `POST /ingest/agent-data` para API
-4. API valida e grava `agent_payloads` e tabelas específicas
-5. IA Orquestrador lê dados consolidados do banco
-6. IA gera `ia_insights`
-7. Web consulta API e exibe chat/dash
-
-## Componentes mínimos para MVP
-
-### MVP 1: Coleta e armazenamento
-- Windows Service coleta dados básicos
-- API FastAPI recebe e grava
-- banco central armazena agentes e payloads
-
-### MVP 2: Relatórios básicos
-- endpoints para dados coletados
-- UI para listar agentes e payloads
-- visualização simples de métricas
-
-### MVP 3: IA interativa
-- IA Orquestrador com prompts
-- UI de chat
-- insights salvos no banco
-
-## Exemplo de endpoints para a API
-
-```http
-POST /ingest/agent-data
-GET /agents
-GET /agents/{id}/status
-GET /analytics/jobs
-GET /analytics/waits
-GET /ia/insights
-POST /ia/query
-```
-
-## Exemplo de prompt para IA
-
-> "Tenho dados de wait stats e jobs das instâncias SafeBase. Analise os principais gargalos, explique o que significa alto `PAGEIOLATCH_SH` e indique possíveis ações de correção." 
-
-### Exemplo de prompt estruturado
-
-```text
-Dados disponíveis:
-- 8 agents conectados
-- 432 jobs nas últimas 24h
-- top waits: PAGEIOLATCH_SH, LCK_M_X, CXPACKET
-- 12 alerts de severidade alta
-
-Pergunta:
-1. Quais são os três problemas mais críticos?
-2. Qual é a causa provável de cada um?
-3. Quais ações imediatas o DBA deve executar?
-```
-
-## Operação local e distribuição
+---
+
+## Autenticação, RBAC e Categorias
+
+### Autenticação
+- JWT como padrão (login) + API Key opcional
+- `/auth/login`, `/auth/me`, `/auth/refresh`, `/auth/logout`
+
+### RBAC
+- Roles e permissions por usuário
+- Exemplo: `admin`, `users.manage`, `categories.manage`
+
+### Categorias de domínio
+- Cada usuário possui categorias liberadas (ex.: `dba`, `seguros`, `credito_trabalhador_clt`)
+- O chat e o IA só operam dentro das categorias liberadas
+
+---
+
+## Chat + IA
+
+### Chat
+- Conversas por usuário
+- `pinned`, `temperature`, `max_tokens`
+- `rename`, `pin`, `settings`, `delete`
+- categoria obrigatória por conversa
+
+### IA
+- `/ia/query` suporta `mode`:
+  - `rapido`
+  - `especialista`
+  - `grafico`
+- Se `mode=grafico`, retorna estrutura de gráfico
+
+---
+
+## Gráficos
+
+- `/ia/query` com `mode=grafico` retorna payload de gráfico
+- Favoritos por usuário: `/charts/favorites`
+- Compartilhamento: `/charts/favorites/{id}/share`
+
+---
+
+## Admin
+
+- Gerenciar categorias
+- Gerenciar usuários
+- Gerenciar fontes externas
+- Gerenciar categorias liberadas por usuário
+
+---
+
+## Estrutura de dados (principal)
+
+- **users**
+- **roles / permissions / user_roles / role_permissions**
+- **chat_conversas** (com categoria_id, pinned, temperature)
+- **chat_mensagens**
+- **chat_categorias**
+- **user_categorias**
+- **user_settings**
+- **chart_favorites / chart_favorite_shares**
+- **external_data_sources**
+- **auth_refresh_tokens**
+
+---
+
+## Observação
+O módulo IA pode ser separado futuramente, mas no MVP atual permanece integrado à API FastAPI para simplificar deploy.
 
 ### Funcionamento em múltiplas instâncias SafeBase
 - cada instância instala o agente local
