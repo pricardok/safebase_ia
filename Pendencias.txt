@@ -1,0 +1,15 @@
+criar estrutura para atender:
+CREATE TABLE [dbo].[AuditConfig] (
+    Id INT IDENTITY(1,1) PRIMARY KEY,
+    NomeConfig VARCHAR(100) NOT NULL,
+    Descricao VARCHAR(500) NULL,
+    Tipo VARCHAR(20) NOT NULL, -- 'DATABASE', 'TABLE', 'INSTANCE'
+    DatabaseName NVARCHAR(128) NULL,
+    SchemaName NVARCHAR(128) NULL,
+    ObjectName NVARCHAR(128) NULL,
+    FlagAtiva BIT NOT NULL DEFAULT 1,
+    Prioridade INT DEFAULT 0,
+    CriadoEm DATETIME DEFAULT GETDATE(),
+    AlteradoEm DATETIME NULL,
+    AlteradoPor NVARCHAR(128) DEFAULT SUSER_NAME()
+)
